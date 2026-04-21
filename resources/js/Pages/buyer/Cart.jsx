@@ -1,5 +1,5 @@
-import { Head } from "@inertiajs/react";
-import { useState } from "react";
+import { Head, router } from "@inertiajs/react";
+import { useState, useEffect } from "react";
 import { Link, usePage } from "@inertiajs/react";
 import BuyerSidebar from "./sidebar";
 import BuyerHeader from "./header";
@@ -22,85 +22,64 @@ export default function CartIndex({
     subtotal,
     shipping,
     total,
+    freeShippingThreshold,
+    savedAddress,
 }) {
-    const { props } = usePage();
-    // Get CSRF token from meta tag - this is more reliable
-    const csrfToken =
-        props.csrf_token ||
-        props.csrfToken ||
-        document.querySelector('meta[name="csrf-token"]')?.content;
-    // Get user from auth prop - Inertia passes auth as a prop
-    const user = auth?.user ?? props.auth?.user;
+    const user = auth?.user;
     const [showCheckout, setShowCheckout] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [checkoutData, setCheckoutData] = useState({
-        shipping_address: "",
-        shipping_city: "",
-        shipping_phone: "",
+        shipping_address: savedAddress?.address || "",
+        shipping_city: savedAddress?.city || "",
+        shipping_phone: savedAddress?.phone || "",
         payment_method: "cod",
         notes: "",
     });
 
-    // Format currency
     const formatCurrency = (amount) => {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
-            currency: "USD",
+            currency: "PHP",
         }).format(amount || 0);
     };
 
-    // Update quantity
-    const updateQuantity = (cartItemId, delta) => {
-        fetch(`/cart/${cartItemId}`, {
-            method: "PUT",
-            headers: {
-                "Content-Type": "application/json",
-                "X-CSRF-TOKEN": document.querySelector(
-                    'meta[name="csrf-token"]',
-                ).content,
+    const updateQuantity = async (cartItemId, delta) => {
+        const currentItem = cartItems?.find((item) => item.id === cartItemId);
+        if (!currentItem) return;
+
+        const newQuantity = Math.max(1, currentItem.quantity + delta);
+
+        router.put(
+            `/api/cart/${cartItemId}`,
+            { quantity: newQuantity },
+            {
+                preserveState: true,
+                preserveScroll: true,
+                onSuccess: () => {
+                    // Page will auto-refresh with updated cart data from Inertia response
+                },
+                onError: (errors) => {
+                    console.error("Update error:", errors);
+                    alert(Object.values(errors)[0] || "Update failed");
+                },
             },
-            body: JSON.stringify({
-                quantity: Math.max(
-                    1,
-                    (cartItems?.find((item) => item.id === cartItemId)
-                        ?.quantity || 0) + delta,
-                ),
-            }),
-        })
-            .then((response) => response.json())
-            .then((data) => {
-                if (data.success) {
-                    window.location.reload();
-                } else {
-                    alert(data.message || "Error updating quantity");
-                }
-            })
-            .catch((error) => {
-                alert("Error updating quantity");
-            });
+        );
     };
 
-    // Remove item
-    const removeItem = (cartItemId) => {
-        fetch(`/cart/${cartItemId}`, {
-            method: "DELETE",
-            headers: {
-                "X-CSRF-TOKEN": document.querySelector(
-                    'meta[name="csrf-token"]',
-                ).content,
+    const removeItem = async (cartItemId) => {
+        if (!confirm("Remove this item from cart?")) return;
+
+        router.delete(`/api/cart/${cartItemId}`, {
+            preserveState: true,
+            preserveScroll: true,
+            onSuccess: () => {
+                // Page will auto-refresh with updated cart data
             },
-        })
-            .then((response) => response.json())
-            .then((data) => {
-                if (data.success) {
-                    window.location.reload();
-                } else {
-                    alert(data.message || "Error removing item");
-                }
-            })
-            .catch((error) => {
-                alert("Error removing item");
-            });
+            onError: (errors) => {
+                console.error("Remove error:", errors);
+                alert(Object.values(errors)[0] || "Remove failed");
+            },
+        });
     };
 
     const handleCheckoutChange = (e) => {
@@ -108,43 +87,28 @@ export default function CartIndex({
         setCheckoutData((prev) => ({ ...prev, [name]: value }));
     };
 
-    const handleCheckout = (e) => {
+    const handleCheckout = async (e) => {
         e.preventDefault();
         setIsProcessing(true);
 
-        fetch(`/cart/checkout`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "X-CSRF-TOKEN": document.querySelector(
-                    'meta[name="csrf-token"]',
-                ).content,
-            },
-            body: JSON.stringify(checkoutData),
-        })
-            .then((response) => response.json())
-            .then((data) => {
-                if (data.success) {
-                    alert("Order placed successfully!");
-                    window.location.href = data.redirect || "/orders";
-                } else {
-                    alert(data.message || "Error placing order");
+        try {
+            await router.post(`/api/cart/checkout`, checkoutData, {
+                preserveState: false,
+                onSuccess: () => {
+                    router.visit("/buyer/orders");
+                },
+                onError: (errors) => {
+                    console.error("Checkout error:", errors);
+                    const errorMsg = Object.values(errors)[0];
+                    alert("Checkout failed: " + (errorMsg || "Unknown error"));
                     setIsProcessing(false);
-                }
-            })
-            .catch((error) => {
-                alert("Error placing order");
-                setIsProcessing(false);
+                },
             });
+        } catch (error) {
+            console.error("Checkout error:", error);
+            setIsProcessing(false);
+        }
     };
-
-    const calculatedSubtotal =
-        cartItems?.reduce((sum, item) => {
-            return sum + (item.product?.price || 0) * item.quantity;
-        }, 0) || 0;
-
-    const calculatedShipping = calculatedSubtotal > 100 ? 0 : 15;
-    const calculatedTotal = calculatedSubtotal + calculatedShipping;
 
     return (
         <div className="min-h-screen bg-gray-50 flex">
@@ -179,7 +143,7 @@ export default function CartIndex({
                                                 your cart
                                             </p>
                                             <Link
-                                                href="/products"
+                                                href="/buyer/products"
                                                 className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700"
                                             >
                                                 Browse Products
@@ -221,8 +185,8 @@ export default function CartIndex({
                                                                         item
                                                                             .product
                                                                             ?.price,
-                                                                    )}
-                                                                    /
+                                                                    )}{" "}
+                                                                    /{" "}
                                                                     {
                                                                         item
                                                                             .product
@@ -236,7 +200,7 @@ export default function CartIndex({
                                                                         item.id,
                                                                     )
                                                                 }
-                                                                className="text-gray-400 hover:text-red-500 transition-colors"
+                                                                className="text-gray-400 hover:text-red-500 transition-colors p-1"
                                                             >
                                                                 <Trash2 className="w-5 h-5" />
                                                             </button>
@@ -249,8 +213,8 @@ export default function CartIndex({
                                                                         item
                                                                             .product
                                                                             ?.price,
-                                                                    )}
-                                                                    /
+                                                                    )}{" "}
+                                                                    /{" "}
                                                                     {
                                                                         item
                                                                             .product
@@ -265,11 +229,11 @@ export default function CartIndex({
                                                                                 -1,
                                                                             )
                                                                         }
-                                                                        className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center hover:bg-gray-200"
+                                                                        className="w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center justify-center transition-colors"
                                                                     >
                                                                         <Minus className="w-4 h-4" />
                                                                     </button>
-                                                                    <span className="w-12 text-center font-medium">
+                                                                    <span className="w-12 text-center font-semibold text-lg">
                                                                         {
                                                                             item.quantity
                                                                         }
@@ -281,7 +245,7 @@ export default function CartIndex({
                                                                                 1,
                                                                             )
                                                                         }
-                                                                        className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center hover:bg-gray-200"
+                                                                        className="w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center justify-center transition-colors"
                                                                     >
                                                                         <Plus className="w-4 h-4" />
                                                                     </button>
@@ -319,43 +283,41 @@ export default function CartIndex({
                                                     <span>Subtotal</span>
                                                     <span>
                                                         {formatCurrency(
-                                                            calculatedSubtotal,
+                                                            subtotal,
                                                         )}
                                                     </span>
                                                 </div>
                                                 <div className="flex justify-between text-gray-600">
                                                     <span>Shipping</span>
                                                     <span>
-                                                        {calculatedShipping ===
-                                                        0 ? (
-                                                            <span className="text-green-600">
+                                                        {shipping === 0 ? (
+                                                            <span className="text-green-600 font-medium">
                                                                 Free
                                                             </span>
                                                         ) : (
                                                             formatCurrency(
-                                                                calculatedShipping,
+                                                                shipping,
                                                             )
                                                         )}
                                                     </span>
                                                 </div>
-                                                {calculatedSubtotal < 100 && (
+                                                {subtotal <
+                                                    freeShippingThreshold && (
                                                     <p className="text-sm text-gray-500">
                                                         Add{" "}
                                                         {formatCurrency(
-                                                            100 -
-                                                                calculatedSubtotal,
+                                                            freeShippingThreshold -
+                                                                subtotal,
                                                         )}{" "}
-                                                        more for free shipping!
+                                                        more for free shipping
                                                     </p>
                                                 )}
-                                                <div className="border-t pt-3 flex justify-between">
-                                                    <span className="font-semibold text-gray-800">
+                                                <div className="border-t pt-3 flex justify-between text-lg">
+                                                    <span className="font-bold text-gray-900">
                                                         Total
                                                     </span>
                                                     <span className="text-xl font-bold text-green-600">
-                                                        {formatCurrency(
-                                                            calculatedTotal,
-                                                        )}
+                                                        {formatCurrency(total)}
                                                     </span>
                                                 </div>
                                             </div>
@@ -364,9 +326,9 @@ export default function CartIndex({
                                                 onClick={() =>
                                                     setShowCheckout(true)
                                                 }
-                                                className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors"
+                                                className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-all duration-200"
                                             >
-                                                <span>Proceed to Checkout</span>
+                                                Proceed to Checkout{" "}
                                                 <ArrowRight className="w-5 h-5" />
                                             </button>
                                         </div>
@@ -374,32 +336,30 @@ export default function CartIndex({
                                 )}
                             </div>
                         ) : (
-                            /* Checkout Form */
                             <div className="max-w-2xl mx-auto">
-                                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8">
                                     <button
                                         onClick={() => setShowCheckout(false)}
-                                        className="inline-flex items-center text-gray-600 hover:text-gray-800 mb-6"
+                                        className="inline-flex items-center text-gray-600 hover:text-gray-900 mb-8 font-medium"
                                     >
-                                        <ArrowLeft className="w-4 h-4 mr-2" />
+                                        <ArrowLeft className="w-5 h-5 mr-2" />
                                         Back to Cart
                                     </button>
 
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-6">
+                                    <h2 className="text-2xl font-bold text-gray-900 mb-8">
                                         Checkout
-                                    </h3>
+                                    </h2>
 
                                     <form
                                         onSubmit={handleCheckout}
                                         className="space-y-6"
                                     >
-                                        {/* Shipping Address */}
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            <label className="block text-sm font-semibold text-gray-700 mb-2">
                                                 Shipping Address *
                                             </label>
                                             <div className="relative">
-                                                <MapPin className="absolute left-3 top-3 text-gray-400 w-5 h-5" />
+                                                <MapPin className="absolute left-4 top-4 text-gray-400 w-5 h-5 pointer-events-none" />
                                                 <textarea
                                                     name="shipping_address"
                                                     value={
@@ -409,56 +369,58 @@ export default function CartIndex({
                                                         handleCheckoutChange
                                                     }
                                                     required
-                                                    rows={3}
-                                                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                                                    placeholder="Enter your full shipping address"
+                                                    rows="3"
+                                                    className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                                                    placeholder="Enter your complete shipping address"
                                                 />
                                             </div>
                                         </div>
 
-                                        {/* Shipping City */}
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                City *
-                                            </label>
-                                            <input
-                                                type="text"
-                                                name="shipping_city"
-                                                value={
-                                                    checkoutData.shipping_city
-                                                }
-                                                onChange={handleCheckoutChange}
-                                                required
-                                                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                                                placeholder="Enter your city"
-                                            />
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                                    City *
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    name="shipping_city"
+                                                    value={
+                                                        checkoutData.shipping_city
+                                                    }
+                                                    onChange={
+                                                        handleCheckoutChange
+                                                    }
+                                                    required
+                                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                                                    placeholder="City"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                                    Phone Number *
+                                                </label>
+                                                <input
+                                                    type="tel"
+                                                    name="shipping_phone"
+                                                    value={
+                                                        checkoutData.shipping_phone
+                                                    }
+                                                    onChange={
+                                                        handleCheckoutChange
+                                                    }
+                                                    required
+                                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                                                    placeholder="Phone number"
+                                                />
+                                            </div>
                                         </div>
 
-                                        {/* Shipping Phone */}
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                Phone Number *
-                                            </label>
-                                            <input
-                                                type="tel"
-                                                name="shipping_phone"
-                                                value={
-                                                    checkoutData.shipping_phone
-                                                }
-                                                onChange={handleCheckoutChange}
-                                                required
-                                                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                                                placeholder="Enter your phone number"
-                                            />
-                                        </div>
-
-                                        {/* Payment Method */}
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            <label className="block text-sm font-semibold text-gray-700 mb-2">
                                                 Payment Method *
                                             </label>
                                             <div className="space-y-3">
-                                                <label className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                                                <label className="flex items-center p-4 border border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 cursor-pointer transition-all">
                                                     <input
                                                         type="radio"
                                                         name="payment_method"
@@ -470,21 +432,21 @@ export default function CartIndex({
                                                         onChange={
                                                             handleCheckoutChange
                                                         }
-                                                        className="w-4 h-4 text-green-600"
+                                                        className="w-5 h-5 text-green-600 border-gray-300 focus:ring-green-500"
                                                     />
-                                                    <div className="flex-1">
-                                                        <span className="font-medium text-gray-800">
+                                                    <div className="ml-3 flex-1">
+                                                        <div className="font-semibold text-gray-900">
                                                             Cash on Delivery
-                                                        </span>
-                                                        <p className="text-sm text-gray-500">
-                                                            Pay when you receive
-                                                            your order
-                                                        </p>
+                                                        </div>
+                                                        <div className="text-sm text-gray-500">
+                                                            Pay cash upon
+                                                            delivery
+                                                        </div>
                                                     </div>
-                                                    <Truck className="w-5 h-5 text-gray-400" />
+                                                    <Truck className="w-6 h-6 text-gray-400 ml-auto" />
                                                 </label>
 
-                                                <label className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                                                <label className="flex items-center p-4 border border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 cursor-pointer transition-all">
                                                     <input
                                                         type="radio"
                                                         name="payment_method"
@@ -496,21 +458,21 @@ export default function CartIndex({
                                                         onChange={
                                                             handleCheckoutChange
                                                         }
-                                                        className="w-4 h-4 text-green-600"
+                                                        className="w-5 h-5 text-green-600 border-gray-300 focus:ring-green-500"
                                                     />
-                                                    <div className="flex-1">
-                                                        <span className="font-medium text-gray-800">
+                                                    <div className="ml-3 flex-1">
+                                                        <div className="font-semibold text-gray-900">
                                                             Bank Transfer
-                                                        </span>
-                                                        <p className="text-sm text-gray-500">
+                                                        </div>
+                                                        <div className="text-sm text-gray-500">
                                                             Transfer to our bank
                                                             account
-                                                        </p>
+                                                        </div>
                                                     </div>
-                                                    <CreditCard className="w-5 h-5 text-gray-400" />
+                                                    <CreditCard className="w-6 h-6 text-gray-400 ml-auto" />
                                                 </label>
 
-                                                <label className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                                                <label className="flex items-center p-4 border border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 cursor-pointer transition-all">
                                                     <input
                                                         type="radio"
                                                         name="payment_method"
@@ -522,54 +484,53 @@ export default function CartIndex({
                                                         onChange={
                                                             handleCheckoutChange
                                                         }
-                                                        className="w-4 h-4 text-green-600"
+                                                        className="w-5 h-5 text-green-600 border-gray-300 focus:ring-green-500"
                                                     />
-                                                    <div className="flex-1">
-                                                        <span className="font-medium text-gray-800">
+                                                    <div className="ml-3 flex-1">
+                                                        <div className="font-semibold text-gray-900">
                                                             GCash
-                                                        </span>
-                                                        <p className="text-sm text-gray-500">
-                                                            Pay using GCash
-                                                        </p>
+                                                        </div>
+                                                        <div className="text-sm text-gray-500">
+                                                            Pay via GCash
+                                                        </div>
                                                     </div>
-                                                    <span className="text-xl">
+                                                    <span className="text-2xl ml-auto">
                                                         📱
                                                     </span>
                                                 </label>
                                             </div>
                                         </div>
 
-                                        {/* Order Notes */}
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            <label className="block text-sm font-semibold text-gray-700 mb-2">
                                                 Order Notes (Optional)
                                             </label>
                                             <textarea
                                                 name="notes"
                                                 value={checkoutData.notes}
                                                 onChange={handleCheckoutChange}
-                                                rows={3}
-                                                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                                                placeholder="Any special instructions for your order"
+                                                rows="3"
+                                                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                                                placeholder="Special instructions for delivery..."
                                             />
                                         </div>
 
-                                        {/* Order Summary */}
-                                        <div className="bg-gray-50 rounded-lg p-4">
-                                            <h4 className="font-semibold text-gray-800 mb-3">
+                                        {/* Order Summary in checkout */}
+                                        <div className="bg-gradient-to-r from-emerald-50 to-green-50 p-6 rounded-2xl border border-emerald-100">
+                                            <h4 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                                                 Order Summary
                                             </h4>
-                                            <div className="space-y-2 text-sm">
+                                            <div className="space-y-2 mb-4">
                                                 {cartItems?.map((item) => (
                                                     <div
                                                         key={item.id}
-                                                        className="flex justify-between"
+                                                        className="flex justify-between text-sm"
                                                     >
-                                                        <span className="text-gray-600">
+                                                        <span className="text-gray-700">
                                                             {item.product?.name}{" "}
-                                                            x {item.quantity}
+                                                            × {item.quantity}
                                                         </span>
-                                                        <span>
+                                                        <span className="font-semibold">
                                                             {formatCurrency(
                                                                 (item.product
                                                                     ?.price ||
@@ -579,39 +540,43 @@ export default function CartIndex({
                                                         </span>
                                                     </div>
                                                 ))}
-                                                <div className="border-t pt-2 flex justify-between font-semibold">
+                                            </div>
+                                            <div className="border-t pt-3 space-y-2">
+                                                <div className="flex justify-between text-lg">
                                                     <span>Total</span>
-                                                    <span className="text-green-600">
-                                                        {formatCurrency(
-                                                            calculatedTotal,
-                                                        )}
+                                                    <span className="font-bold text-2xl text-green-600">
+                                                        {formatCurrency(total)}
                                                     </span>
                                                 </div>
                                             </div>
                                         </div>
 
-                                        {/* Actions */}
-                                        <div className="flex gap-4">
+                                        <div className="flex gap-4 pt-4">
                                             <button
                                                 type="button"
                                                 onClick={() =>
                                                     setShowCheckout(false)
                                                 }
-                                                className="flex-1 px-6 py-3 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                                                className="flex-1 px-8 py-4 border-2 border-gray-200 text-gray-700 font-semibold rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all"
                                             >
                                                 Back to Cart
                                             </button>
                                             <button
                                                 type="submit"
                                                 disabled={isProcessing}
-                                                className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                                                className="flex-1 flex items-center justify-center gap-3 px-8 py-4 bg-gradient-to-r from-green-600 to-green-700 text-white font-bold rounded-xl hover:from-green-700 hover:to-green-800 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transition-all duration-200"
                                             >
-                                                <CheckCircle className="w-5 h-5" />
-                                                <span>
-                                                    {isProcessing
-                                                        ? "Processing..."
-                                                        : "Place Order"}
-                                                </span>
+                                                {isProcessing ? (
+                                                    <>
+                                                        <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                        Processing...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <CheckCircle className="w-6 h-6" />
+                                                        Place Order
+                                                    </>
+                                                )}
                                             </button>
                                         </div>
                                     </form>

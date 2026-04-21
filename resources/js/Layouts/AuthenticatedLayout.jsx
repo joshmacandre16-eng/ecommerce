@@ -3,10 +3,23 @@ import Dropdown from "@/Components/Dropdown";
 import NavLink from "@/Components/NavLink";
 import ResponsiveNavLink from "@/Components/ResponsiveNavLink";
 import { Link, usePage } from "@inertiajs/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function AuthenticatedLayout({ header, children }) {
     const user = usePage().props.auth.user;
+    const csrfToken = usePage().props.csrf_token;
+
+    useEffect(() => {
+        if (csrfToken && window.axios) {
+            window.axios.defaults.headers.common["X-CSRF-TOKEN"] = csrfToken;
+            const token = document.head.querySelector(
+                'meta[name="csrf-token"]',
+            );
+            if (token) {
+                token.content = csrfToken;
+            }
+        }
+    }, [csrfToken]);
 
     const [showingNavigationDropdown, setShowingNavigationDropdown] =
         useState(false);

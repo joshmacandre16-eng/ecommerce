@@ -20,7 +20,9 @@ export default function BuyerDashboard({
     stats = {},
     orders = [],
     featuredProducts = [],
+    allProducts,
 }) {
+    const safeAllProducts = allProducts?.data || [];
     const user = auth?.user;
     const { props } = usePage();
     const csrfToken = props.csrf_token || props.csrfToken;
@@ -88,7 +90,7 @@ export default function BuyerDashboard({
     const formatCurrency = (amount) => {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
-            currency: "USD",
+            currency: "PHP",
         }).format(amount || 0);
     };
 
@@ -197,7 +199,7 @@ export default function BuyerDashboard({
         setAddingToCart(productId);
         setErrorMessage(null);
         try {
-            const response = await fetch(route("cart.add"), {
+            const response = await fetch("/api/cart/add", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -480,7 +482,7 @@ export default function BuyerDashboard({
                                     <ArrowUpRight className="w-5 h-5 text-blue-600 group-hover:translate-x-1 transition-transform" />
                                 </Link>
                                 <Link
-                                    href="/cart"
+                                    href="/buyer/cart"
                                     className="flex items-center justify-between p-4 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors group"
                                 >
                                     <div className="flex items-center gap-3">
@@ -716,6 +718,132 @@ export default function BuyerDashboard({
                             </div>
                         </div>
                     </div>
+
+                    {/* All Products from Database */}
+                    {safeAllProducts.length > 0 && (
+                        <div className="bg-white border border-gray-200 rounded-lg mt-8">
+                            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                                <div>
+                                    <h2 className="text-lg font-semibold text-gray-900">
+                                        All Available Products
+                                    </h2>
+                                    <p className="text-sm text-gray-500 mt-1">
+                                        Complete list of products in database
+                                        (Page {allProducts?.current_page} of{" "}
+                                        {allProducts?.last_page})
+                                    </p>
+                                </div>
+                                <Link
+                                    href="/products"
+                                    className="text-sm font-medium text-blue-600 hover:text-blue-700"
+                                >
+                                    Full Catalog →
+                                </Link>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                Image
+                                            </th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                Product
+                                            </th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                Seller
+                                            </th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                Price
+                                            </th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                Stock
+                                            </th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                Rating
+                                            </th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                Created
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-gray-200">
+                                        {safeAllProducts.map((product) => (
+                                            <tr
+                                                key={product.id}
+                                                className="hover:bg-gray-50"
+                                            >
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    {product.image_url ? (
+                                                        <img
+                                                            src={
+                                                                product.image_url
+                                                            }
+                                                            alt={product.name}
+                                                            className="w-12 h-12 object-cover rounded"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center">
+                                                            <Package className="w-6 h-6 text-gray-400" />
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="text-sm font-medium text-gray-900">
+                                                        {product.name}
+                                                    </div>
+                                                    <div className="text-sm text-gray-500">
+                                                        {product.category}
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                    {product.seller?.name ||
+                                                        "N/A"}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className="text-sm font-semibold text-emerald-600">
+                                                        {formatCurrency(
+                                                            product.price,
+                                                        )}{" "}
+                                                        /
+                                                        {product.unit || "unit"}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                    {product.stock || 0}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                    {renderStarRating(
+                                                        product.reviews_avg_rating,
+                                                        false,
+                                                        product.reviews_count,
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {formatDate(
+                                                        product.created_at,
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {allProducts?.next_page_url && (
+                                <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                                    <Link
+                                        href={allProducts.next_page_url.replace(
+                                            "/buyer/dashboard?",
+                                            "/products?",
+                                        )}
+                                        className="text-sm text-blue-600 hover:text-blue-700"
+                                    >
+                                        Load More Products →
+                                    </Link>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* Error Toast */}
                     {errorMessage && (

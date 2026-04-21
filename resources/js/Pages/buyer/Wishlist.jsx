@@ -9,7 +9,7 @@ export default function Wishlist({ auth, wishlists }) {
     const formatPrice = (price) => {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
-            currency: "USD",
+            currency: "PHP",
         }).format(price || 0);
     };
 

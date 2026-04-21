@@ -30,7 +30,7 @@ export default function Reports({
     const formatCurrency = (amount) => {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
-            currency: "USD",
+            currency: "PHP",
         }).format(amount || 0);
     };
 

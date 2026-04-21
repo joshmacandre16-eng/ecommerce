@@ -65,16 +65,7 @@ Route::get('/dashboard', function () {
 })->middleware(['auth', 'verified'])->name('dashboard');
 
 // Cart API routes (for AJAX calls)
-Route::prefix('api/cart')->group(function () {
-    Route::get('/', [CartController::class, 'index'])->middleware('auth');
-    Route::post('/add', [CartController::class, 'addToCart'])->middleware('auth');
-    Route::put('/{cartItem}', [CartController::class, 'updateCartItem'])->middleware('auth');
-    Route::delete('/{cartItem}', [CartController::class, 'removeCartItem'])->middleware('auth');
-    Route::delete('/', [CartController::class, 'clearCart'])->middleware('auth');
-    Route::get('/count', [CartController::class, 'getCartCount'])->middleware('auth');
-    Route::get('/summary', [CartController::class, 'getCartSummary'])->middleware('auth');
-    Route::post('/checkout', [CartController::class, 'checkout'])->middleware('auth');
-});
+
 
 // Cart page route
 Route::get('/cart', [CartController::class, 'index'])
@@ -88,18 +79,27 @@ Route::prefix('orders')->group(function () {
     Route::put('/{order}/status', [OrderController::class, 'updateStatus'])->middleware('auth')->name('orders.updateStatus');
     Route::put('/{order}/payment', [OrderController::class, 'updatePaymentStatus'])->middleware('auth')->name('orders.updatePayment');
     Route::put('/{order}/tracking', [OrderController::class, 'updateTracking'])->middleware('auth')->name('orders.updateTracking');
+    Route::put('/{order}/assign-logistic', [OrderController::class, 'assignLogistic'])->middleware('auth')->name('orders.assignLogistic');
+    Route::put('/{order}/{orderItem}/assign-logistic-item', [OrderController::class, 'assignLogisticToItem'])->middleware('auth')->name('orders.orderItems.assignLogistic');
+
 });
 
 // Product routes
+Route::prefix('farmer/products')->middleware(['auth', 'verified'])->group(function () {
+    Route::get('/', [FarmerController::class, 'products'])->name('farmer.products');
+    Route::get('/create', [FarmerController::class, 'createProduct'])->name('farmer.products.create');
+    Route::post('/', [FarmerController::class, 'storeProduct'])->name('farmer.products.store');
+    Route::get('/{product}', [ProductController::class, 'show'])->name('farmer.products.show');
+    Route::get('/{product}/edit', [ProductController::class, 'edit'])->name('farmer.products.edit');
+    Route::put('/{product}', [ProductController::class, 'update'])->name('farmer.products.update');
+    Route::delete('/{product}', [ProductController::class, 'destroy'])->name('farmer.products.destroy');
+});
+
+// General products (admin/buyer)
 Route::prefix('products')->group(function () {
     Route::get('/', [ProductController::class, 'index'])->middleware('auth')->name('products.index');
-    Route::get('/create', [ProductController::class, 'create'])->middleware('auth')->name('products.create');
-    Route::post('/', [ProductController::class, 'store'])->middleware('auth')->name('products.store');
-    Route::get('/{product}/edit', [ProductController::class, 'edit'])->middleware('auth')->name('products.edit');
-    Route::put('/{product}', [ProductController::class, 'update'])->middleware('auth')->name('products.update');
-    Route::delete('/{product}', [ProductController::class, 'destroy'])->middleware('auth')->name('products.destroy');
-    Route::put('/{product}/approve', [ProductController::class, 'approve'])->middleware('auth')->name('products.approve');
-    Route::put('/{product}/reject', [ProductController::class, 'reject'])->middleware('auth')->name('products.reject');
+    Route::match(['put', 'post'], '/{product}/approve', [ProductController::class, 'approve'])->middleware('auth')->name('products.approve');
+    Route::match(['put', 'post'], '/{product}/reject', [ProductController::class, 'reject'])->middleware('auth')->name('products.reject');
 });
 
 // Buyer Routes
@@ -111,6 +111,10 @@ Route::prefix('buyer')->middleware(['auth', 'verified'])->group(function () {
     Route::post('/wishlist/add', [BuyerController::class, 'addToWishlist'])->name('buyer.wishlist.add');
     Route::delete('/wishlist/{wishlist}', [BuyerController::class, 'removeFromWishlist'])->name('buyer.wishlist.remove');
     Route::get('/addresses', [BuyerController::class, 'addresses'])->name('buyer.addresses');
+    Route::post('/addresses', [BuyerController::class, 'store'])->name('buyer.addresses.store');
+    Route::put('/addresses/{address}', [BuyerController::class, 'update'])->name('buyer.addresses.update');
+    Route::delete('/addresses/{address}', [BuyerController::class, 'destroy'])->name('buyer.addresses.destroy');
+    Route::patch('/addresses/{address}/default', [BuyerController::class, 'setDefault'])->name('buyer.addresses.setDefault');
     Route::get('/payment-methods', [BuyerController::class, 'paymentMethods'])->name('buyer.paymentMethods');
     Route::get('/notifications', [BuyerController::class, 'notifications'])->name('buyer.notifications');
     Route::post('/notifications/mark-read', [BuyerController::class, 'markNotificationAsRead'])->name('buyer.notifications.markRead');
@@ -122,17 +126,25 @@ Route::prefix('buyer')->middleware(['auth', 'verified'])->group(function () {
     Route::get('/products/{product}/reviews', [BuyerController::class, 'getProductReviews'])->name('buyer.products.reviews');
     Route::get('/recommended', [BuyerController::class, 'getRecommendedProducts'])->name('buyer.recommended');
     Route::get('/cart', [BuyerController::class, 'cart'])->name('buyer.cart');
+    Route::get('/profile', [BuyerController::class, 'profile'])->name('buyer.profile');
+    Route::patch('/profile', [BuyerController::class, 'updateProfile'])->name('buyer.profile.update');
 });
+
+// Test Dashboard Route - minimal test
+Route::get('/test-dashboard', [\App\Http\Controllers\TestDashboardController::class, 'index'])->middleware(['auth', 'verified'])->name('test.dashboard');
 
 // Farmer Routes
 Route::prefix('farmer')->middleware(['auth', 'verified'])->group(function () {
+    Route::get('/logistics', [FarmerController::class, 'logistics'])->name('farmer.logistics');
     Route::get('/dashboard', [FarmerController::class, 'dashboard'])->name('farmer.dashboard');
     Route::get('/products', [FarmerController::class, 'products'])->name('farmer.products');
     Route::get('/products/create', [FarmerController::class, 'createProduct'])->name('farmer.products.create');
+    Route::post('/products', [FarmerController::class, 'storeProduct'])->name('farmer.products.store');
     Route::get('/orders', [FarmerController::class, 'orders'])->name('farmer.orders');
     Route::get('/analytics', [FarmerController::class, 'analytics'])->name('farmer.analytics');
     Route::get('/inventory', [FarmerController::class, 'inventory'])->name('farmer.inventory');
     Route::get('/earnings', [FarmerController::class, 'earnings'])->name('farmer.earnings');
+    Route::get('/product-track', [FarmerController::class, 'productTrack'])->name('farmer.product-track');
     Route::get('/notifications', [FarmerController::class, 'notifications'])->name('farmer.notifications');
     Route::post('/notifications/mark-read', [FarmerController::class, 'markNotificationAsRead'])->name('farmer.notifications.markRead');
     Route::post('/notifications/mark-all-read', [FarmerController::class, 'markAllNotificationsAsRead'])->name('farmer.notifications.markAllRead');
@@ -141,6 +153,7 @@ Route::prefix('farmer')->middleware(['auth', 'verified'])->group(function () {
     Route::get('/profile', [FarmerController::class, 'profile'])->name('farmer.profile');
     Route::get('/profile/edit', [FarmerController::class, 'editProfile'])->name('farmer.profile.edit');
     Route::put('/profile', [FarmerController::class, 'updateProfile'])->name('farmer.profile.update');
+    Route::patch('/profile', [FarmerController::class, 'updateProfile'])->name('farmer.profile.update');
 });
 
 // Logistic/Rider Routes
@@ -166,7 +179,13 @@ Route::prefix('admin')->middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('admin.dashboard');
     Route::get('/users', [AdminController::class, 'users'])->name('admin.users');
     Route::get('/products', [AdminController::class, 'products'])->name('admin.products');
+    Route::put('/products/{product}/assign-logistic', [AdminController::class, 'assignProductLogistic'])->name('admin.products.assignLogistic');
     Route::get('/orders', [AdminController::class, 'orders'])->name('admin.orders');
+    Route::get('/logs', [AdminController::class, 'logs'])->name('admin.logs.index');
+    Route::get('/logs/download/{filename}', [AdminController::class, 'downloadLog'])->name('admin.logs.download');
+    Route::delete('/logs/clear/{filename}', [AdminController::class, 'clearLog'])->name('admin.logs.clear');
+    Route::delete('/logs/clear-all', [AdminController::class, 'clearAllLogs'])->name('admin.logs.clearAll');
+    Route::get('/logistics', [AdminController::class, 'logistics'])->name('admin.logistics.list');
     Route::get('/reports', [AdminController::class, 'reports'])->name('admin.reports');
     Route::get('/documents', [AdminController::class, 'documents'])->name('admin.documents');
     Route::post('/documents/seller/{id}/approve', [AdminController::class, 'approveSellerDocument'])->name('admin.documents.seller.approve');
@@ -191,8 +210,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
 });
 
 // Additional buyer routes for add-to-cart from products page
-Route::post('/cart/add', [CartController::class, 'addToCart'])
-    ->middleware(['auth', 'verified'])
-    ->name('cart.add');
+
 
 

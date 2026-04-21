@@ -10,14 +10,15 @@ import {
     Settings,
     LogOut,
     Plus,
+    Truck,
 } from "lucide-react";
 
 export default function FarmerSidebar() {
     const navigation = [
         { name: "Dashboard", href: "/farmer/dashboard", icon: LayoutDashboard },
         { name: "My Products", href: "/farmer/products", icon: Package },
-        { name: "Add Product", href: "/farmer/products/create", icon: Plus },
         { name: "Orders", href: "/farmer/orders", icon: ShoppingCart },
+        { name: "Product Track", href: "/farmer/product-track", icon: Truck },
         { name: "Analytics", href: "/farmer/analytics", icon: TrendingUp },
         { name: "Inventory", href: "/farmer/inventory", icon: Warehouse },
         { name: "Earnings", href: "/farmer/earnings", icon: DollarSign },

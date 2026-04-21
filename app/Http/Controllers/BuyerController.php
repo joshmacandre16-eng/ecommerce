@@ -15,6 +15,7 @@ use App\Models\Notification;
 use App\Models\Review;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class BuyerController extends Controller
 {
@@ -48,29 +49,42 @@ class BuyerController extends Controller
             ->get();
         
         // Get featured products (active and approved products from sellers)
-        $featuredProducts = Product::with('seller')
+        $featuredProducts = Product::with(['seller', 'reviews.avg_rating'])
             ->where('is_approved', true)
             ->where('is_active', true)
             ->latest()
             ->take(6)
             ->get();
-        
+
+        // Get ALL approved/active products with aggregated reviews, paginated
+        $allProductsQuery = Product::with(['seller'])
+            ->where('is_approved', true)
+            ->where('is_active', true)
+            ->select('products.*');
+
+        // Add review aggregates using subquery
+        $allProductsQuery->withAvg('reviews', 'rating')
+            ->withCount('reviews');
+
+        $allProducts = $allProductsQuery->latest()
+            ->paginate(20);  // Show first 20 pages on dashboard
+
         return Inertia::render('buyer/dashboard', [
             'auth' => ['user' => $user],
             'stats' => $stats,
+            'cartCount' => $cartItems,
             'orders' => $orders,
             'featuredProducts' => $featuredProducts,
+            'allProducts' => $allProducts,
         ]);
     }
 
     /**
-     * Display the shopping cart page.
-     * This is kept for backwards compatibility with any links that might use /buyer/cart
+     * Display the buyer cart page.
      */
     public function cart()
     {
-        // Redirect to the dedicated cart route
-        return to_route('cart.index');
+        return app(CartController::class)->buyerIndex();
     }
 
     /**
@@ -216,9 +230,102 @@ class BuyerController extends Controller
             ->latest()
             ->get();
         
+        // Get cart count for sidebar
+        $cartCount = CartItem::where('buyer_id', $user->id)->sum('quantity');
+        
         return Inertia::render('buyer/Addresses', [
             'auth' => ['user' => $user],
             'addresses' => $addresses,
+            'flash' => session('flash', []),
+            'cartCount' => $cartCount,
+        ]);
+    }
+
+    /**
+     * Store a new address.
+     */
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'address' => 'required|string|max:500',
+            'city' => 'required|string|max:100',
+            'state' => 'nullable|string|max:100',
+            'zip_code' => 'nullable|string|max:20',
+            'country' => 'required|string|max:100',
+            'phone' => 'nullable|string|max:20',
+        ]);
+
+        Address::create(array_merge($validated, [
+            'buyer_id' => Auth::id(),
+        ]));
+
+        return back()->with('flash', [
+            'success' => 'Address added successfully!'
+        ]);
+    }
+
+    /**
+     * Update an existing address.
+     */
+    public function update(Request $request, Address $address)
+    {
+        if ($address->buyer_id !== Auth::id()) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'address' => 'required|string|max:500',
+            'city' => 'required|string|max:100',
+            'state' => 'nullable|string|max:100',
+            'zip_code' => 'nullable|string|max:20',
+            'country' => 'required|string|max:100',
+            'phone' => 'nullable|string|max:20',
+        ]);
+
+        $address->update($validated);
+
+        return back()->with('flash', [
+            'success' => 'Address updated successfully!'
+        ]);
+    }
+
+    /**
+     * Delete an address.
+     */
+    public function destroy(Address $address)
+    {
+        if ($address->buyer_id !== Auth::id()) {
+            abort(403);
+        }
+
+        $address->delete();
+
+        return back()->with('flash', [
+            'success' => 'Address deleted successfully!'
+        ]);
+    }
+
+    /**
+     * Set address as default.
+     */
+    public function setDefault(Address $address)
+    {
+        if ($address->buyer_id !== Auth::id()) {
+            abort(403);
+        }
+
+        // Unset all other defaults for this buyer
+        Address::where('buyer_id', Auth::id())
+            ->where('id', '!=', $address->id)
+            ->update(['is_default' => false]);
+
+        // Set this one as default
+        $address->update(['is_default' => true]);
+
+        return back()->with('flash', [
+            'success' => 'Default address updated!'
         ]);
     }
 
@@ -226,6 +333,7 @@ class BuyerController extends Controller
      * Display the payment methods page.
      */
     public function paymentMethods()
+
     {
         $user = Auth::user();
         
@@ -607,4 +715,59 @@ class BuyerController extends Controller
             'recommended_products' => $recommendedProducts,
         ]);
     }
+
+    /**
+     * Display the buyer profile page.
+     */
+    public function profile()
+    {
+        $user = Auth::user();
+        return Inertia::render('buyer/profile', [
+            'auth' => ['user' => $user],
+            'flash' => session('flash'),
+        ]);
+    }
+
+    /**
+     * Update the buyer profile information.
+     */
+    public function updateProfile(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|string|email|max:255|unique:users,email,' . Auth::id(),
+            'phone' => 'nullable|string|max:20',
+            'address' => 'nullable|string|max:500',
+            'profile_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+        ]);
+
+        $user = Auth::user();
+
+        // Handle profile image
+        if ($request->hasFile('profile_image')) {
+            // Delete old image if exists
+            if ($user->profile_image && \Storage::disk('public')->exists($user->profile_image)) {
+                \Storage::disk('public')->delete($user->profile_image);
+            }
+
+            $image = $request->file('profile_image');
+            $imageName = time() . '_' . $image->getClientOriginalName();
+            $imagePath = $image->storeAs('profile_images', $imageName, 'public');
+            $user->profile_image = '/' . $imagePath;
+        }
+
+        $user->name = $request->name;
+        $user->email = $request->email;
+        $user->phone = $request->phone;
+        $user->address = $request->address;
+
+        if ($user->isDirty('email')) {
+            $user->email_verified_at = null;
+        }
+
+        $user->save();
+
+        return back()->with('flash', ['success' => 'Profile updated successfully!']);
+    }
 }
+

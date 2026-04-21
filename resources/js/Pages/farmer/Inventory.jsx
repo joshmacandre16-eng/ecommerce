@@ -10,7 +10,7 @@ export default function Inventory({ auth, products = [], stats = {} }) {
     const formatCurrency = (amount) => {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
-            currency: "USD",
+            currency: "PHP",
         }).format(amount || 0);
     };
 

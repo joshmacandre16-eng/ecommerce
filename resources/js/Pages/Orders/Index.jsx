@@ -65,7 +65,7 @@ export default function OrdersIndex({ auth, orders, filters }) {
     const formatCurrency = (amount) => {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
-            currency: "USD",
+            currency: "PHP",
         }).format(amount || 0);
     };
 

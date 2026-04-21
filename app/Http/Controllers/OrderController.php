@@ -201,4 +201,52 @@ class OrderController extends Controller
         
         return back()->with('success', 'Tracking number updated successfully.');
     }
+
+    /**
+     * Assign logistic rider to order.
+     */
+    public function assignLogistic(Request $request, Order $order)
+    {
+        $request->validate([
+            'logistic_id' => 'required|exists:users,id',
+        ]);
+
+        $logistic = \App\Models\User::findOrFail($request->logistic_id);
+        if ($logistic->role !== 'logistics') {
+            abort(422, 'Selected user is not a logistics rider.');
+        }
+
+        if (Auth::user()->role !== 'admin' && Auth::user()->role !== 'super_admin') {
+            abort(403, 'Unauthorized');
+        }
+
+        $order->update(['logistic_id' => $request->logistic_id]);
+
+        return back()->with('success', 'Logistic rider assigned successfully.');
+    }
+
+    /**
+     * Assign logistic to specific order item.
+     */
+    public function assignLogisticToItem(Request $request, Order $order, OrderItem $orderItem)
+    {
+        $request->validate([
+            'logistic_id' => 'required|exists:users,id',
+        ]);
+
+        $logistic = \App\Models\User::findOrFail($request->logistic_id);
+        if ($logistic->role !== 'logistics') {
+            abort(422, 'Selected user is not a logistics rider.');
+        }
+
+        if (Auth::user()->role !== 'admin' && Auth::user()->role !== 'super_admin') {
+            abort(403, 'Unauthorized');
+        }
+
+        $orderItem->update(['logistic_id' => $request->logistic_id]);
+        $order->load('orderItems.logistic'); // Reload for frontend
+
+        return back()->with('success', 'Logistic assigned to item successfully.');
+    }
+
 }

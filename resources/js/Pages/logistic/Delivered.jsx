@@ -90,7 +90,7 @@ export default function Delivered({ auth, deliveries, stats, filters }) {
     const formatPrice = (price) => {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
-            currency: "USD",
+            currency: "PHP",
         }).format(price);
     };
 

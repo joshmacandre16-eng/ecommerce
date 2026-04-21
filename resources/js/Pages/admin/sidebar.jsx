@@ -1,6 +1,7 @@
-import { Link } from "@inertiajs/react";
+import { Link, router } from "@inertiajs/react";
 import {
     LayoutDashboard,
+    LogOut,
     Users,
     Package,
     ShoppingCart,
@@ -8,7 +9,6 @@ import {
     FileText,
     Bell,
     Settings,
-    LogOut,
     Shield,
     ScrollText,
 } from "lucide-react";
@@ -60,23 +60,22 @@ export default function AdminSidebar() {
                     <Users className="w-5 h-5 mr-3" />
                     My Profile
                 </Link>
+                <button
+                    onClick={() => {
+                        if (confirm("Are you sure you want to logout?")) {
+                            router.post("/logout");
+                        }
+                    }}
+                    className="flex items-center px-4 py-3 text-sm font-medium text-red-700 rounded-lg hover:bg-red-50 transition-colors w-full"
+                >
+                    <LogOut className="w-5 h-5 mr-3 text-red-500" />
+                    Log out
+                </button>
             </div>
 
-            {/* Logout */}
-            <div className="p-4 border-t border-gray-200">
-                <Link
-                    href="/logout"
-                    method="post"
-                    as="button"
-                    className="flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                    <LogOut className="w-4 h-4 mr-2" />
-                    Logout
-                </Link>
-                <p className="text-xs text-gray-500 text-center mt-3">
-                    © 2024 Admin Panel
-                </p>
-            </div>
+            <p className="text-xs text-gray-500 text-center p-4">
+                © 2024 Admin Panel
+            </p>
         </aside>
     );
 }

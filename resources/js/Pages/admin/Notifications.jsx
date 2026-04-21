@@ -114,7 +114,7 @@ export default function Notifications({
         e.preventDefault();
         setLoading(true);
         router.get(
-            route("admin.notifications.index"),
+            route("admin.notifications"),
             {
                 search: searchTerm,
                 type: typeFilter,
@@ -163,7 +163,7 @@ export default function Notifications({
         if (key === "status") setStatusFilter(value);
         setLoading(true);
         router.get(
-            route("admin.notifications.index"),
+            route("admin.notifications"),
             {
                 search: searchTerm,
                 type: key === "type" ? value : typeFilter,

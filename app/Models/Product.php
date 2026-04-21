@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class Product extends Model
 {
@@ -29,6 +30,9 @@ class Product extends Model
         'is_approved',
         'is_active',
         'rejection_reason',
+        'sales_count',
+        'sales_revenue',
+        'logistic_id',
     ];
 
     /**
@@ -43,6 +47,7 @@ class Product extends Model
         'is_organic' => 'boolean',
         'is_approved' => 'boolean',
         'is_active' => 'boolean',
+        'sales_revenue' => 'decimal:2',
     ];
 
     /**
@@ -51,6 +56,14 @@ class Product extends Model
     public function seller()
     {
         return $this->belongsTo(User::class, 'seller_id');
+    }
+
+    /**
+     * Get the logistic (rider) assigned to this product.
+     */
+    public function logistic()
+    {
+        return $this->belongsTo(User::class, 'logistic_id');
     }
 
     /**
@@ -83,6 +96,34 @@ class Product extends Model
     public function getReviewCountAttribute()
     {
         return $this->reviews()->count();
+    }
+
+    /**
+     * Get sales count from completed paid orders.
+     */
+    public function getSalesCountAttribute()
+    {
+        return $this->orderItems()
+            ->whereHas('order', function ($query) {
+                $query->where('payment_status', 'paid')
+                      ->whereIn('order_status', ['delivered', 'completed']);
+            })
+            ->sum('quantity');
+    }
+
+    /**
+     * Get sales revenue from completed paid orders.
+     */
+    public function getSalesRevenueAttribute()
+    {
+        $revenue = $this->orderItems()
+            ->whereHas('order', function ($query) {
+                $query->where('payment_status', 'paid')
+                      ->whereIn('order_status', ['delivered', 'completed']);
+            })
+            ->sum(DB::raw('quantity * price'));
+
+        return $revenue ?: 0;
     }
 
     /**
@@ -137,3 +178,4 @@ class Product extends Model
         return $this->image_url;
     }
 }
+

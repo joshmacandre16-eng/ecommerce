@@ -14,9 +14,10 @@ export default function Active({ auth, deliveries, stats, filters }) {
     const [viewModalOpen, setViewModalOpen] = useState(false);
     const [selectedDelivery, setSelectedDelivery] = useState(null);
 
-    // Filter deliveries based on search (client-side filtering for displayed deliveries)
+    // Client-side filtering on server-filtered data - clears show all instantly
     const filteredDeliveries = deliveries.data.filter((delivery) => {
         const matchesSearch =
+            !searchTerm ||
             delivery.id?.toString().includes(searchTerm.toLowerCase()) ||
             delivery.tracking_number
                 ?.toLowerCase()
@@ -90,7 +91,7 @@ export default function Active({ auth, deliveries, stats, filters }) {
     const formatPrice = (price) => {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
-            currency: "USD",
+            currency: "PHP",
         }).format(price);
     };
 
@@ -104,10 +105,15 @@ export default function Active({ auth, deliveries, stats, filters }) {
         router.get(
             route("logistic.active"),
             {
-                search: searchTerm,
+                search: searchTerm || undefined,
             },
             { preserveState: true },
         );
+    };
+
+    const clearFilters = () => {
+        setSearchTerm("");
+        router.get(route("logistic.active"), {}, { preserveState: true });
     };
 
     return (
@@ -179,6 +185,14 @@ export default function Active({ auth, deliveries, stats, filters }) {
                             >
                                 Search
                             </button>
+                            {searchTerm && (
+                                <button
+                                    onClick={clearFilters}
+                                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                                >
+                                    Clear All
+                                </button>
+                            )}
                         </div>
                     </div>
 
@@ -308,6 +322,35 @@ export default function Active({ auth, deliveries, stats, filters }) {
                         </div>
                     </div>
 
+                    {/* Logistic Notification Banner */}
+                    <div className="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6 rounded-lg shadow-sm">
+                        <div className="flex">
+                            <div className="flex-shrink-0">
+                                <svg
+                                    className="h-5 w-5 text-blue-400"
+                                    fill="currentColor"
+                                    viewBox="0 0 20 20"
+                                >
+                                    <path
+                                        fillRule="evenodd"
+                                        d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"
+                                        clipRule="evenodd"
+                                    />
+                                </svg>
+                            </div>
+                            <div className="ml-3">
+                                <p className="text-sm font-medium text-blue-800">
+                                    <strong>
+                                        You are the assigned logistic for these
+                                        active deliveries.
+                                    </strong>
+                                    Farmers and buyers know you handle tracking
+                                    and updates for their products.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Pagination Info */}
                     {deliveries.data && deliveries.data.length > 0 && (
                         <div className="mt-4 flex items-center justify-between">
@@ -315,6 +358,7 @@ export default function Active({ auth, deliveries, stats, filters }) {
                                 Showing {deliveries.from || 1} to{" "}
                                 {deliveries.to || deliveries.data.length} of{" "}
                                 {deliveries.total} deliveries
+                                {searchTerm && ` (filtered)`}
                             </div>
                             <div className="flex gap-2">
                                 {deliveries.prev_page_url && (

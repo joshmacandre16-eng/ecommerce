@@ -19,6 +19,7 @@ class OrderItem extends Model
         'product_id',
         'quantity',
         'price',
+        'logistic_id',
     ];
 
     /**
@@ -46,4 +47,13 @@ class OrderItem extends Model
     {
         return $this->belongsTo(Product::class);
     }
+
+    /**
+     * Get the assigned logistic rider for this order item.
+     */
+    public function logistic()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'logistic_id');
+    }
+
 }

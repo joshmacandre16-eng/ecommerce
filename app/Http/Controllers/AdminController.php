@@ -13,6 +13,7 @@ use App\Models\RiderDocument;
 use App\Models\Setting;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 
 class AdminController extends Controller
@@ -153,7 +154,7 @@ class AdminController extends Controller
         $category = $request->category ?? '';
         $status = $request->status ?? '';
         
-        $products = Product::with('seller')
+        $products = Product::with('seller', 'logistic')
             ->when($search, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('name', 'like', "%{$search}%")
@@ -175,15 +176,23 @@ class AdminController extends Controller
         
         // Transform products to ensure image URL is properly serialized for frontend
         $products->getCollection()->transform(function ($product) {
-            $product->image = $product->image_url;
+            // Ensure image attribute returns the full URL
+            $product->image = $product->getImageUrlAttribute();
+            $product->image_url = $product->getOriginal('image_url'); // Also include raw image_url
             return $product;
         });
+        
+        $logistics = User::where('role', 'logistics')
+            ->where('is_approved', true)
+            ->with('riderProfile')
+            ->get(['id', 'name', 'email', 'phone']);
         
         return Inertia::render('admin/Products', [
             'auth' => [
                 'user' => $request->user(),
             ],
             'products' => $products,
+            'logistics' => $logistics,
         ]);
     }
 
@@ -196,7 +205,7 @@ class AdminController extends Controller
         $status = $request->status ?? '';
         $paymentStatus = $request->payment_status ?? '';
         
-        $orders = Order::with(['buyer', 'orderItems.product'])
+        $orders = Order::with(['buyer', 'orderItems.product', 'logistic'])
             ->when($search, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('id', 'like', "%{$search}%")
@@ -204,6 +213,9 @@ class AdminController extends Controller
                       ->orWhereHas('buyer', function ($buyerQuery) use ($search) {
                           $buyerQuery->where('name', 'like', "%{$search}%")
                                     ->orWhere('email', 'like', "%{$search}%");
+                      })
+                      ->orWhereHas('logistic', function ($logisticQuery) use ($search) {
+                          $logisticQuery->where('name', 'like', "%{$search}%");
                       });
                 });
             })
@@ -683,8 +695,336 @@ class AdminController extends Controller
         }
     }
 
-/**
-     * Display the admin profile page.
+    /**
+     * List approved logistics riders for assignment.
+     */
+    public function logs(Request $request)
+    {
+        try {
+            $search = trim($request->search ?? '');
+            $level = trim($request->level ?? '');
+            $selectedFile = $request->file;
+            $logDir = storage_path('logs');
+
+            $logFiles = [];
+            try {
+                if (File::exists($logDir)) {
+                    foreach (File::files($logDir) as $file) {
+                        if ($file->getExtension() !== 'log') {
+                            continue;
+                        }
+
+                        $logFiles[] = [
+                            'name' => $file->getFilename(),
+                            'size' => $file->getSize(),
+                            'modified' => Carbon::createFromTimestamp($file->getMTime())->format('Y-m-d H:i:s'),
+                        ];
+                    }
+                }
+            } catch (\Exception $e) {
+                $error = 'Error listing log files: ' . $e->getMessage();
+            }
+
+            usort($logFiles, function ($a, $b) {
+                return strcmp($b['name'], $a['name']);
+            });
+
+            if (!$selectedFile && count($logFiles) > 0) {
+                $selectedFile = $logFiles[0]['name'];
+            }
+
+            $logs = [];
+            $error = null;
+
+            if ($selectedFile) {
+                $selectedFile = basename($selectedFile);
+                $validFileNames = array_column($logFiles, 'name');
+
+                if (!in_array($selectedFile, $validFileNames, true)) {
+                    $error = 'Invalid log file selected.';
+                } else {
+                    $path = $logDir . DIRECTORY_SEPARATOR . $selectedFile;
+                    if (File::exists($path)) {
+                        try {
+                            $content = File::get($path);
+                            $lines = preg_split('/\r\n|\n|\r/', $content);
+
+                            foreach ($lines as $line) {
+                                if ($line === '') {
+                                    continue;
+                                }
+
+                                if ($search && stripos($line, $search) === false) {
+                                    continue;
+                                }
+
+                                $entry = [
+                                    'raw' => $line,
+                                    'date' => null,
+                                    'environment' => null,
+                                    'level' => null,
+                                    'message' => $line,
+                                ];
+
+                                if (preg_match('/^\[([^\]]+)\]\s+([^\.]+)\.([^:]+):\s*(.*)$/', $line, $matches)) {
+                                    $entry['date'] = $matches[1];
+                                    $entry['environment'] = $matches[2];
+                                    $entry['level'] = $matches[3];
+                                    $entry['message'] = $matches[4];
+                                }
+
+                                if ($level && $entry['level'] && strcasecmp($entry['level'], $level) !== 0) {
+                                    continue;
+                                }
+
+                                $logs[] = $entry;
+                            }
+                        } catch (\Exception $e) {
+                            $error = 'Error reading log file: ' . $e->getMessage();
+                        }
+                    } else {
+                        $error = 'Selected log file does not exist.';
+                    }
+                }
+            }
+
+            // Get user logs (login activity)
+            $userLogs = $this->getUserActivityLogs();
+
+            // Get suspicious activities
+            $suspiciousActivities = $this->detectSuspiciousActivities();
+
+            return Inertia::render('admin/Logs', [
+                'auth' => ['user' => $request->user()],
+                'logFiles' => $logFiles,
+                'logs' => $logs,
+                'selectedFile' => $selectedFile,
+                'filters' => [
+                    'search' => $search,
+                    'level' => $level,
+                ],
+                'error' => $error,
+                'userLogs' => $userLogs,
+                'suspiciousActivities' => $suspiciousActivities,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Admin logs rendering failed: ' . $e->getMessage());
+            return Inertia::render('admin/Logs', [
+                'auth' => ['user' => $request->user()],
+                'logFiles' => [],
+                'logs' => [],
+                'selectedFile' => null,
+                'filters' => [
+                    'search' => '',
+                    'level' => '',
+                ],
+                'error' => 'An error occurred while loading the logs page.',
+                'userLogs' => [],
+                'suspiciousActivities' => [],
+            ]);
+        }
+    }
+
+    /**
+     * Get user activity logs
+     */
+    private function getUserActivityLogs()
+    {
+        try {
+            // This would typically come from a login_logs table or audit table
+            // For now, we'll create sample data from available information
+            $userLogs = [];
+
+            // Get recent logins from users table if you have login_at column
+            $recentUsers = User::where('updated_at', '>=', Carbon::now()->subDays(7))
+                ->select('id', 'name', 'email', 'last_login_at', 'last_login_ip')
+                ->orderBy('updated_at', 'desc')
+                ->limit(50)
+                ->get();
+
+            foreach ($recentUsers as $user) {
+                $userLogs[] = [
+                    'user_name' => $user->name,
+                    'email' => $user->email,
+                    'timestamp' => $user->last_login_at ? Carbon::parse($user->last_login_at)->format('Y-m-d H:i:s') : 'Unknown',
+                    'ip_address' => $user->last_login_ip ?? 'Unknown',
+                    'device' => 'Web Browser',
+                    'location' => 'Not Available',
+                    'status' => 'success',
+                ];
+            }
+
+            return $userLogs;
+        } catch (\Exception $e) {
+            Log::error('Error fetching user activity logs: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Detect suspicious activities
+     */
+    private function detectSuspiciousActivities()
+    {
+        try {
+            $suspiciousActivities = [];
+
+            // Check for multiple failed login attempts
+            $users = User::all();
+            $failedLoginThreshold = 5;
+
+            foreach ($users as $user) {
+                $failedAttempts = 0;
+                $lastLoginAttempt = null;
+
+                // Check logs for failed attempts (you might have a failed_logins table)
+                // This is a simplified check
+                if (isset($user->last_login_ip)) {
+                    // Simulate checking for suspicious patterns
+                    // In real implementation, query from audit/login_logs table
+                }
+
+                // Example: Detect if user has not logged in for a while
+                if ($user->last_login_at && Carbon::parse($user->last_login_at)->diffInDays(now()) > 30) {
+                    if ($user->role !== 'admin') { // Don't flag admin accounts
+                        $suspiciousActivities[] = [
+                            'user_id' => $user->id,
+                            'user_name' => $user->name,
+                            'email' => $user->email,
+                            'reason' => 'Account inactive for more than 30 days',
+                            'timestamp' => now()->format('Y-m-d H:i:s'),
+                            'failed_attempts' => 0,
+                            'ip_address' => $user->last_login_ip ?? 'Unknown',
+                            'location' => 'Unknown',
+                            'location_changes' => 0,
+                            'unusual_time' => false,
+                            'unusual_ip' => false,
+                        ];
+                    }
+                }
+
+                // Example: Detect unusual admin activity
+                if ($user->role === 'admin' || $user->role === 'super_admin') {
+                    if ($user->is_active === false) {
+                        $suspiciousActivities[] = [
+                            'user_id' => $user->id,
+                            'user_name' => $user->name,
+                            'email' => $user->email,
+                            'reason' => 'Inactive admin account still exists',
+                            'timestamp' => now()->format('Y-m-d H:i:s'),
+                            'failed_attempts' => 0,
+                            'ip_address' => $user->last_login_ip ?? 'Unknown',
+                            'location' => 'Unknown',
+                            'location_changes' => 0,
+                            'unusual_time' => false,
+                            'unusual_ip' => true,
+                        ];
+                    }
+                }
+            }
+
+            return $suspiciousActivities;
+        } catch (\Exception $e) {
+            Log::error('Error detecting suspicious activities: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    public function downloadLog(Request $request, $filename)
+    {
+        $filename = basename($filename);
+        $logDir = storage_path('logs');
+        $path = $logDir . DIRECTORY_SEPARATOR . $filename;
+
+        if (!File::exists($path) || File::extension($path) !== 'log') {
+            return back()->with('error', 'Log file not found.');
+        }
+
+        return response()->download($path, $filename, [
+            'Content-Type' => 'text/plain',
+        ]);
+    }
+
+    public function clearLog(Request $request, $filename)
+    {
+        $filename = basename($filename);
+        $logDir = storage_path('logs');
+        $path = $logDir . DIRECTORY_SEPARATOR . $filename;
+
+        if (!File::exists($path) || File::extension($path) !== 'log') {
+            return back()->with('error', 'Log file not found.');
+        }
+
+        File::put($path, '');
+
+        return back()->with('success', 'Log file cleared successfully.');
+    }
+
+    public function clearAllLogs(Request $request)
+    {
+        $logDir = storage_path('logs');
+
+        if (File::exists($logDir)) {
+            foreach (File::files($logDir) as $file) {
+                if ($file->getExtension() === 'log') {
+                    File::put($file->getPathname(), '');
+                }
+            }
+        }
+
+        return back()->with('success', 'All log files cleared successfully.');
+    }
+
+    /**
+     * Assign a logistic to a product
+     */
+    public function assignProductLogistic(Request $request, Product $product)
+    {
+        try {
+            $validated = $request->validate([
+                'logistic_id' => 'required|exists:users,id',
+            ]);
+
+            // Verify the logistic user exists and has logistics role
+            $logistic = User::where('id', $validated['logistic_id'])
+                ->whereIn('role', ['logistics', 'rider'])
+                ->firstOrFail();
+
+            // Update the product with the logistic
+            $product->update([
+                'logistic_id' => $logistic->id,
+            ]);
+
+            return redirect()->back()->with('success', 'Logistic assigned to product successfully.');
+        } catch (\Throwable $e) {
+            Log::error('Error assigning logistic to product: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Failed to assign logistic to product.');
+        }
+    }
+
+    /**
+     * List approved logistics riders for assignment.
+     */
+    public function logistics(Request $request)
+    {
+        try {
+            $logistics = User::whereIn('role', ['logistics', 'rider'])
+                ->with('riderProfile')
+                ->get();
+
+            return response()->json([
+                'logistics' => $logistics,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Error fetching logistics: ' . $e->getMessage());
+            return response()->json([
+                'error' => 'Failed to fetch logistics',
+            ], 500);
+        }
+    }
+
+    /**
+     * Display the profile page.
      */
     public function profile(Request $request)
     {

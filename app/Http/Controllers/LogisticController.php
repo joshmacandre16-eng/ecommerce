@@ -19,9 +19,90 @@ class LogisticController extends Controller
     /**
      * Display the pending deliveries page.
      */
-    public function pending()
+    public function pending(Request $request)
     {
-        return Inertia::render('logistic/Pending');
+        $search = $request->search ?? '';
+        
+$pendingOrders = \App\Models\Order::with(['buyer', 'orderItems.product'])
+            ->whereIn('order_status', ['pending', 'confirmed', 'preparing'])
+            ->where(function ($query) use ($request) {
+                $query->where('logistic_id', $request->user()->id)
+                      ->orWhereHas('orderItems', function ($itemQuery) use ($request) {
+                          $itemQuery->where('logistic_id', $request->user()->id)
+                                    ->orWhereHas('product', function ($productQuery) use ($request) {
+                                        $productQuery->where('logistic_id', $request->user()->id);
+                                    });
+                      });
+            })
+            ->when($search, function ($query, $search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('id', 'like', "%{$search}%")
+                      ->orWhere('tracking_number', 'like', "%{$search}%")
+                      ->orWhereHas('buyer', function ($buyerQuery) use ($search) {
+                          $buyerQuery->where('name', 'like', "%{$search}%")
+                                    ->orWhere('email', 'like', "%{$search}%")
+                                    ->orWhere('phone', 'like', "%{$search}%");
+                      });
+                });
+            })
+            ->orderBy('created_at', 'desc')
+            ->paginate(15);
+        
+        $stats = [
+'pendingCount' => \App\Models\Order::where('order_status', 'pending')
+    ->where(function ($query) use ($request) {
+        $query->where('logistic_id', $request->user()->id)
+              ->orWhereHas('orderItems', function ($itemQuery) use ($request) {
+                  $itemQuery->where('logistic_id', $request->user()->id)
+                            ->orWhereHas('product', function ($productQuery) use ($request) {
+                                $productQuery->where('logistic_id', $request->user()->id);
+                            });
+              });
+    })
+    ->count(),
+'confirmedCount' => \App\Models\Order::where('order_status', 'confirmed')
+    ->where(function ($query) use ($request) {
+        $query->where('logistic_id', $request->user()->id)
+              ->orWhereHas('orderItems', function ($itemQuery) use ($request) {
+                  $itemQuery->where('logistic_id', $request->user()->id)
+                            ->orWhereHas('product', function ($productQuery) use ($request) {
+                                $productQuery->where('logistic_id', $request->user()->id);
+                            });
+              });
+    })
+    ->count(),
+'preparingCount' => \App\Models\Order::where('order_status', 'preparing')
+    ->where(function ($query) use ($request) {
+        $query->where('logistic_id', $request->user()->id)
+              ->orWhereHas('orderItems', function ($itemQuery) use ($request) {
+                  $itemQuery->where('logistic_id', $request->user()->id)
+                            ->orWhereHas('product', function ($productQuery) use ($request) {
+                                $productQuery->where('logistic_id', $request->user()->id);
+                            });
+              });
+    })
+    ->count(),
+'totalPending' => \App\Models\Order::whereIn('order_status', ['pending', 'confirmed', 'preparing'])
+    ->where(function ($query) use ($request) {
+        $query->where('logistic_id', $request->user()->id)
+              ->orWhereHas('orderItems', function ($itemQuery) use ($request) {
+                  $itemQuery->where('logistic_id', $request->user()->id)
+                            ->orWhereHas('product', function ($productQuery) use ($request) {
+                                $productQuery->where('logistic_id', $request->user()->id);
+                            });
+              });
+    })
+    ->count(),
+        ];
+        
+        return Inertia::render('logistic/Pending', [
+            'auth' => ['user' => $request->user()],
+            'pendingOrders' => $pendingOrders,
+            'stats' => $stats,
+            'filters' => [
+                'search' => $search,
+            ],
+        ]);
     }
 
     /**
@@ -32,7 +113,16 @@ class LogisticController extends Controller
         $search = $request->search ?? '';
         
         $deliveries = \App\Models\Order::with(['buyer', 'orderItems.product'])
-            ->where('order_status', 'shipped')
+            ->whereIn('order_status', ['confirmed', 'preparing', 'shipped'])
+            ->where(function ($query) use ($request) {
+                $query->where('logistic_id', $request->user()->id)
+                      ->orWhereHas('orderItems', function ($itemQuery) use ($request) {
+                          $itemQuery->where('logistic_id', $request->user()->id)
+                                    ->orWhereHas('product', function ($productQuery) use ($request) {
+                                        $productQuery->where('logistic_id', $request->user()->id);
+                                    });
+                      });
+            })
             ->when($search, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('id', 'like', "%{$search}%")
@@ -48,9 +138,38 @@ class LogisticController extends Controller
             ->paginate(10);
         
         $stats = [
-            'activeDeliveries' => \App\Models\Order::where('order_status', 'shipped')->count(),
-            'pendingDeliveries' => \App\Models\Order::where('order_status', 'pending')->count(),
+            'activeDeliveries' => \App\Models\Order::whereIn('order_status', ['confirmed', 'preparing', 'shipped'])
+                ->where(function ($query) use ($request) {
+                    $query->where('logistic_id', $request->user()->id)
+                          ->orWhereHas('orderItems', function ($itemQuery) use ($request) {
+                              $itemQuery->where('logistic_id', $request->user()->id)
+                                        ->orWhereHas('product', function ($productQuery) use ($request) {
+                                            $productQuery->where('logistic_id', $request->user()->id);
+                                        });
+                          });
+                })
+                ->count(),
+            'pendingDeliveries' => \App\Models\Order::where('order_status', 'pending')
+                ->where(function ($query) use ($request) {
+                    $query->where('logistic_id', $request->user()->id)
+                          ->orWhereHas('orderItems', function ($itemQuery) use ($request) {
+                              $itemQuery->where('logistic_id', $request->user()->id)
+                                        ->orWhereHas('product', function ($productQuery) use ($request) {
+                                            $productQuery->where('logistic_id', $request->user()->id);
+                                        });
+                          });
+                })
+                ->count(),
             'deliveredToday' => \App\Models\Order::where('order_status', 'delivered')
+                ->where(function ($query) use ($request) {
+                    $query->where('logistic_id', $request->user()->id)
+                          ->orWhereHas('orderItems', function ($itemQuery) use ($request) {
+                              $itemQuery->where('logistic_id', $request->user()->id)
+                                        ->orWhereHas('product', function ($productQuery) use ($request) {
+                                            $productQuery->where('logistic_id', $request->user()->id);
+                                        });
+                          });
+                })
                 ->whereDate('updated_at', today())->count(),
         ];
         
@@ -73,6 +192,15 @@ class LogisticController extends Controller
         
         $deliveries = \App\Models\Order::with(['buyer', 'orderItems.product'])
             ->where('order_status', 'delivered')
+            ->where(function ($query) use ($request) {
+                $query->where('logistic_id', $request->user()->id)
+                      ->orWhereHas('orderItems', function ($itemQuery) use ($request) {
+                          $itemQuery->where('logistic_id', $request->user()->id)
+                                    ->orWhereHas('product', function ($productQuery) use ($request) {
+                                        $productQuery->where('logistic_id', $request->user()->id);
+                                    });
+                      });
+            })
             ->when($search, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('id', 'like', "%{$search}%")
@@ -88,10 +216,39 @@ class LogisticController extends Controller
             ->paginate(10);
         
         $stats = [
-            'totalDelivered' => \App\Models\Order::where('order_status', 'delivered')->count(),
+            'totalDelivered' => \App\Models\Order::where('order_status', 'delivered')
+                ->where(function ($query) use ($request) {
+                    $query->where('logistic_id', $request->user()->id)
+                          ->orWhereHas('orderItems', function ($itemQuery) use ($request) {
+                              $itemQuery->where('logistic_id', $request->user()->id)
+                                        ->orWhereHas('product', function ($productQuery) use ($request) {
+                                            $productQuery->where('logistic_id', $request->user()->id);
+                                        });
+                          });
+                })
+                ->count(),
             'deliveredToday' => \App\Models\Order::where('order_status', 'delivered')
+                ->where(function ($query) use ($request) {
+                    $query->where('logistic_id', $request->user()->id)
+                          ->orWhereHas('orderItems', function ($itemQuery) use ($request) {
+                              $itemQuery->where('logistic_id', $request->user()->id)
+                                        ->orWhereHas('product', function ($productQuery) use ($request) {
+                                            $productQuery->where('logistic_id', $request->user()->id);
+                                        });
+                          });
+                })
                 ->whereDate('updated_at', today())->count(),
-            'activeDeliveries' => \App\Models\Order::where('order_status', 'shipped')->count(),
+            'activeDeliveries' => \App\Models\Order::where('order_status', 'shipped')
+                ->where(function ($query) use ($request) {
+                    $query->where('logistic_id', $request->user()->id)
+                          ->orWhereHas('orderItems', function ($itemQuery) use ($request) {
+                              $itemQuery->where('logistic_id', $request->user()->id)
+                                        ->orWhereHas('product', function ($productQuery) use ($request) {
+                                            $productQuery->where('logistic_id', $request->user()->id);
+                                        });
+                          });
+                })
+                ->count(),
         ];
         
         return Inertia::render('logistic/Delivered', [
@@ -113,6 +270,15 @@ class LogisticController extends Controller
         $statusFilter = $request->status ?? '';
         
         $orders = \App\Models\Order::with(['buyer', 'orderItems.product'])
+            ->where(function ($query) use ($request) {
+                $query->where('logistic_id', $request->user()->id)
+                      ->orWhereHas('orderItems', function ($itemQuery) use ($request) {
+                          $itemQuery->where('logistic_id', $request->user()->id)
+                                    ->orWhereHas('product', function ($productQuery) use ($request) {
+                                        $productQuery->where('logistic_id', $request->user()->id);
+                                    });
+                      });
+            })
             ->when($search, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('id', 'like', "%{$search}%")
@@ -131,10 +297,45 @@ class LogisticController extends Controller
             ->paginate(10);
         
         $stats = [
-            'totalOrders' => \App\Models\Order::count(),
-            'pendingOrders' => \App\Models\Order::where('order_status', 'pending')->count(),
-            'shippedOrders' => \App\Models\Order::where('order_status', 'shipped')->count(),
-            'deliveredOrders' => \App\Models\Order::where('order_status', 'delivered')->count(),
+            'totalOrders' => \App\Models\Order::where(function ($query) use ($request) {
+                $query->where('logistic_id', $request->user()->id)
+                      ->orWhereHas('orderItems', function ($itemQuery) use ($request) {
+                          $itemQuery->where('logistic_id', $request->user()->id)
+                                    ->orWhereHas('product', function ($productQuery) use ($request) {
+                                        $productQuery->where('logistic_id', $request->user()->id);
+                                    });
+                      });
+            })->count(),
+            'pendingOrders' => \App\Models\Order::where('order_status', 'pending')
+                ->where(function ($query) use ($request) {
+                    $query->where('logistic_id', $request->user()->id)
+                          ->orWhereHas('orderItems', function ($itemQuery) use ($request) {
+                              $itemQuery->where('logistic_id', $request->user()->id)
+                                        ->orWhereHas('product', function ($productQuery) use ($request) {
+                                            $productQuery->where('logistic_id', $request->user()->id);
+                                        });
+                          });
+                })->count(),
+            'shippedOrders' => \App\Models\Order::where('order_status', 'shipped')
+                ->where(function ($query) use ($request) {
+                    $query->where('logistic_id', $request->user()->id)
+                          ->orWhereHas('orderItems', function ($itemQuery) use ($request) {
+                              $itemQuery->where('logistic_id', $request->user()->id)
+                                        ->orWhereHas('product', function ($productQuery) use ($request) {
+                                            $productQuery->where('logistic_id', $request->user()->id);
+                                        });
+                          });
+                })->count(),
+            'deliveredOrders' => \App\Models\Order::where('order_status', 'delivered')
+                ->where(function ($query) use ($request) {
+                    $query->where('logistic_id', $request->user()->id)
+                          ->orWhereHas('orderItems', function ($itemQuery) use ($request) {
+                              $itemQuery->where('logistic_id', $request->user()->id)
+                                        ->orWhereHas('product', function ($productQuery) use ($request) {
+                                            $productQuery->where('logistic_id', $request->user()->id);
+                                        });
+                          });
+                })->count(),
         ];
         
         return Inertia::render('logistic/Orders', [
@@ -153,9 +354,18 @@ class LogisticController extends Controller
      */
     public function routes(Request $request)
     {
-        // Get active deliveries with location data (shipped orders)
+        // Get active deliveries with location data (confirmed, preparing, shipped orders)
         $activeDeliveries = \App\Models\Order::with(['buyer'])
-            ->where('order_status', 'shipped')
+            ->whereIn('order_status', ['confirmed', 'preparing', 'shipped'])
+            ->where(function ($query) use ($request) {
+                $query->where('logistic_id', $request->user()->id)
+                      ->orWhereHas('orderItems', function ($itemQuery) use ($request) {
+                          $itemQuery->where('logistic_id', $request->user()->id)
+                                    ->orWhereHas('product', function ($productQuery) use ($request) {
+                                        $productQuery->where('logistic_id', $request->user()->id);
+                                    });
+                      });
+            })
             ->get()
             ->map(function ($order) {
                 return [
@@ -199,6 +409,7 @@ class LogisticController extends Controller
         // Get active deliveries with location data (shipped orders)
         $deliveries = \App\Models\Order::with(['buyer'])
             ->whereIn('order_status', ['shipped', 'pending'])
+            ->where('logistic_id', $request->user()->id)
             ->get()
             ->map(function ($order) {
                 return [

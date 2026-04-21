@@ -29,10 +29,11 @@ class CartController extends Controller
     /**
      * Display the shopping cart page.
      */
-    public function index()
+    /**
+     * Get cart data for rendering.
+     */
+    private function getCartData($user)
     {
-        $user = Auth::user();
-
         // Fetch cart items with product and seller data
         $cartItems = CartItem::with(['product', 'product.seller'])
             ->where('buyer_id', $user->id)
@@ -54,15 +55,33 @@ class CartController extends Controller
             ->where('is_default', true)
             ->first();
 
-        return Inertia::render('buyer/Cart', [
+        return [
             'auth' => ['user' => $user],
             'cartItems' => $cartItems,
+            'cartCount' => $cartItems->count(),
             'subtotal' => $subtotal,
             'shipping' => $shipping,
             'total' => $total,
             'freeShippingThreshold' => self::FREE_SHIPPING_THRESHOLD,
             'savedAddress' => $addresses,
-        ]);
+        ];
+    }
+
+    /**
+     * Display the shopping cart page.
+     */
+    public function index()
+    {
+        $user = Auth::user();
+        return Inertia::render('buyer/Cart', $this->getCartData($user));
+    }
+    
+    /**
+     * Display buyer cart for /buyer/cart route.
+     */
+    public function buyerIndex()
+    {
+        return $this->index();
     }
 
     /**
@@ -81,27 +100,17 @@ class CartController extends Controller
         $product = Product::find($request->product_id);
         
         if (!$product) {
-            return response()->json([
-                'success' => false, 
-                'message' => 'Product not found'
-            ], 404);
+            return back()->with('error', 'Product not found');
         }
 
         // Check if product is approved and active
         if (!$product->is_approved || !$product->is_active) {
-            return response()->json([
-                'success' => false, 
-                'message' => 'Product is not available'
-            ], 400);
+            return back()->with('error', 'Product is not available');
         }
 
         // Check if product has enough stock
         if ($product->stock < $request->quantity) {
-            return response()->json([
-                'success' => false, 
-                'message' => 'Not enough stock available',
-                'available_stock' => $product->stock
-            ], 400);
+            return back()->with('error', 'Not enough stock available. Available: ' . $product->stock);
         }
 
         // Check if item already exists in cart
@@ -115,34 +124,20 @@ class CartController extends Controller
             
             // Check stock
             if ($product->stock < $newQuantity) {
-                return response()->json([
-                    'success' => false, 
-                    'message' => 'Not enough stock available',
-                    'available_stock' => $product->stock
-                ], 400);
+                return back()->with('error', 'Not enough stock available. Available: ' . $product->stock);
             }
             
             $existingCartItem->update(['quantity' => $newQuantity]);
-            
-            return response()->json([
-                'success' => true, 
-                'message' => 'Cart updated successfully',
-                'cart_count' => CartItem::where('buyer_id', $user->id)->sum('quantity')
+        } else {
+            // Create new cart item
+            CartItem::create([
+                'buyer_id' => $user->id,
+                'product_id' => $request->product_id,
+                'quantity' => $request->quantity,
             ]);
         }
 
-        // Create new cart item
-        $cartItem = CartItem::create([
-            'buyer_id' => $user->id,
-            'product_id' => $request->product_id,
-            'quantity' => $request->quantity,
-        ]);
-
-        return response()->json([
-            'success' => true, 
-            'message' => 'Product added to cart',
-            'cart_count' => CartItem::where('buyer_id', $user->id)->sum('quantity')
-        ]);
+        return Inertia::render('buyer/Cart', $this->getCartData($user));
     }
 
     /**
@@ -153,10 +148,7 @@ class CartController extends Controller
         $user = Auth::user();
         
         if ($cartItem->buyer_id !== $user->id) {
-            return response()->json([
-                'success' => false, 
-                'message' => 'Unauthorized'
-            ], 403);
+            return back()->with('error', 'Unauthorized');
         }
 
         $request->validate([
@@ -166,26 +158,16 @@ class CartController extends Controller
         // Check stock availability
         $product = Product::find($cartItem->product_id);
         if (!$product) {
-            return response()->json([
-                'success' => false, 
-                'message' => 'Product not found'
-            ], 404);
+            return back()->with('error', 'Product not found');
         }
 
         if ($product->stock < $request->quantity) {
-            return response()->json([
-                'success' => false, 
-                'message' => 'Not enough stock available',
-                'available_stock' => $product->stock
-            ], 400);
+            return back()->with('error', 'Not enough stock available. Available: ' . $product->stock);
         }
 
         $cartItem->update(['quantity' => $request->quantity]);
 
-        return response()->json([
-            'success' => true, 
-            'message' => 'Cart updated successfully'
-        ]);
+        return Inertia::render('buyer/Cart', $this->getCartData($user));
     }
 
     /**
@@ -196,18 +178,12 @@ class CartController extends Controller
         $user = Auth::user();
         
         if ($cartItem->buyer_id !== $user->id) {
-            return response()->json([
-                'success' => false, 
-                'message' => 'Unauthorized'
-            ], 403);
+            return back()->with('error', 'Unauthorized');
         }
 
         $cartItem->delete();
 
-        return response()->json([
-            'success' => true, 
-            'message' => 'Item removed from cart'
-        ]);
+        return Inertia::render('buyer/Cart', $this->getCartData($user));
     }
 
     /**
@@ -375,18 +351,16 @@ class CartController extends Controller
             Notification::create([
                 'user_id' => $user->id,
                 'type' => 'order_placed',
-                'title' => 'Order Placed Successfully',
-                'message' => 'Your order #' . $order->id . ' has been placed successfully. Total: $' . number_format($total, 2),
+'title' => 'Order Placed Successfully',
+                'message' => 'Your order #' . $order->id . ' has been placed successfully. Total: ₱' . number_format($total, 2),
                 'is_read' => false,
             ]);
 
             DB::commit();
 
-            return response()->json([
-                'success' => true, 
-                'message' => 'Order placed successfully',
-                'order_id' => $order->id,
-                'redirect' => '/buyer/orders'
+            return redirect('/buyer/orders')->with([
+                'success' => 'Order placed successfully',
+                'order_id' => $order->id
             ]);
 
         } catch (\Exception $e) {

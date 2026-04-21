@@ -14,7 +14,7 @@ class Order extends Model
      *
      * @var array<int, string>
      */
-    protected $fillable = [
+protected $fillable = [
         'buyer_id',
         'total_amount',
         'payment_method',
@@ -25,6 +25,7 @@ class Order extends Model
         'shipping_phone',
         'tracking_number',
         'notes',
+        'logistic_id',
     ];
 
     /**
@@ -74,6 +75,14 @@ class Order extends Model
             'card' => 'Credit/Debit Card',
             'paypal' => 'PayPal',
         ];
+    }
+
+    /**
+     * Get the assigned logistic rider.
+     */
+    public function logistic()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'logistic_id');
     }
 
     /**

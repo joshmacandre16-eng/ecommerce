@@ -74,9 +74,16 @@ class HandleInertiaRequests extends Middleware
         // Get unread notifications count for authenticated users
         $unreadNotifications = 0;
         if ($request->user()) {
-            $unreadNotifications = \App\Models\Notification::where('user_id', $request->user()->id)
-                ->where('is_read', false)
-                ->count();
+        $unreadNotifications = 0;
+        try {
+            if ($request->user()) {
+                $unreadNotifications = \App\Models\Notification::where('user_id', $request->user()->id)
+                    ->where('is_read', false)
+                    ->count();
+            }
+        } catch (\Exception $e) {
+            // Table doesn't exist yet, default to 0
+        }
         }
 
         return array_merge(parent::share($request), [

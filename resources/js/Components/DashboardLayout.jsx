@@ -5,7 +5,6 @@ import {
     ShoppingCart,
     Users,
     User,
-    LogOut,
     Menu,
     X,
     Bell,
@@ -61,7 +60,7 @@ export default function DashboardLayout({
     const formatCurrency = (amount) => {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
-            currency: "USD",
+            currency: "PHP",
         }).format(amount || 0);
     };
 
@@ -165,21 +164,9 @@ export default function DashboardLayout({
                     </Link>
                 </div>
 
-                {/* Logout */}
-                <div className="p-4 border-t border-gray-200">
-                    <Link
-                        href="/logout"
-                        method="post"
-                        as="button"
-                        className="flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                        <LogOut className="w-4 h-4 mr-2" />
-                        Logout
-                    </Link>
-                    <p className="text-xs text-gray-500 text-center mt-3">
-                        © 2024 Admin Panel
-                    </p>
-                </div>
+                <p className="text-xs text-gray-500 text-center p-4 border-t border-gray-200">
+                    © 2024 Admin Panel
+                </p>
             </aside>
 
             {/* Overlay for mobile */}

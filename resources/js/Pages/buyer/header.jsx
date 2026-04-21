@@ -1,10 +1,10 @@
-import { Link } from "@inertiajs/react";
+import { Link, router } from "@inertiajs/react";
 import {
     Bell,
+    LogOut,
     Search,
     User,
     Settings,
-    LogOut,
     Menu,
     ShoppingCart,
     Heart,
@@ -119,16 +119,21 @@ export default function BuyerHeader({ user }) {
                                 <Settings className="w-4 h-4 text-gray-500" />
                                 Settings
                             </Link>
-                            <hr className="my-1 border-gray-100" />
-                            <Link
-                                href="/logout"
-                                method="post"
-                                as="button"
-                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                            <button
+                                onClick={() => {
+                                    if (
+                                        confirm(
+                                            "Are you sure you want to logout?",
+                                        )
+                                    ) {
+                                        router.post("/logout");
+                                    }
+                                }}
+                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-red-700 hover:bg-red-50 transition-colors border-t border-gray-100"
                             >
-                                <LogOut className="w-4 h-4" />
-                                Logout
-                            </Link>
+                                <LogOut className="w-4 h-4 text-red-500" />
+                                Log out
+                            </button>
                         </div>
                     </div>
                 </div>

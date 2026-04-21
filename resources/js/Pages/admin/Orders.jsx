@@ -1,6 +1,7 @@
 import { Head } from "@inertiajs/react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { router, usePage } from "@inertiajs/react";
+import axios from "axios";
 import AdminSidebar from "./sidebar";
 import AdminHeader from "./header";
 import Modal from "@/Components/Modal";
@@ -20,17 +21,44 @@ export default function Orders({ auth, orders, stats, filters }) {
     const [viewModalOpen, setViewModalOpen] = useState(false);
     const [statusModalOpen, setStatusModalOpen] = useState(false);
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+    const [assignModalOpen, setAssignModalOpen] = useState(false);
 
     // Selected order state
     const [selectedOrder, setSelectedOrder] = useState(null);
 
     // Loading states
     const [loading, setLoading] = useState(false);
+    const [assignLoading, setAssignLoading] = useState(false);
+
+    // Logistics
+    const [logistics, setLogistics] = useState([]);
+    const [selectedLogisticId, setSelectedLogisticId] = useState("");
+    const [itemLogistics, setItemLogistics] = useState({});
 
     // Form data for status update
     const [formData, setFormData] = useState({
         status: "",
     });
+
+    // Fetch logistics on mount
+    const [logisticsLoading, setLogisticsLoading] = useState(false);
+
+    useEffect(() => {
+        const fetchLogistics = async () => {
+            setLogisticsLoading(true);
+            try {
+                const response = await axios.get(route("admin.logistics.list"));
+                setLogistics(response.data.props.logistics || []);
+            } catch (error) {
+                console.error("Failed to fetch logistics:", error);
+                setLogistics([]);
+            } finally {
+                setLogisticsLoading(false);
+            }
+        };
+
+        fetchLogistics();
+    }, []);
 
     // Filter orders based on search and filters (client-side filtering for displayed orders)
     const filteredOrders = orders.data.filter((order) => {
@@ -98,6 +126,15 @@ export default function Orders({ auth, orders, stats, filters }) {
         return paymentLabels[status] || status;
     };
 
+    const getLogisticBadgeClass = (logistic) => {
+        if (!logistic) return "bg-gray-100 text-gray-800";
+        return "bg-indigo-100 text-indigo-800";
+    };
+
+    const formatLogistic = (logistic) => {
+        return logistic ? `${logistic.name} (${logistic.email})` : "Unassigned";
+    };
+
     const formatDate = (dateString) => {
         if (!dateString) return "-";
         return new Date(dateString).toLocaleDateString("en-US", {
@@ -112,7 +149,7 @@ export default function Orders({ auth, orders, stats, filters }) {
     const formatPrice = (price) => {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
-            currency: "USD",
+            currency: "PHP",
         }).format(price);
     };
 
@@ -133,6 +170,12 @@ export default function Orders({ auth, orders, stats, filters }) {
     const handleDelete = (order) => {
         setSelectedOrder(order);
         setDeleteModalOpen(true);
+    };
+
+    const handleAssignLogistic = (order) => {
+        setSelectedOrder(order);
+        setSelectedLogisticId(order.logistic_id || "");
+        setAssignModalOpen(true);
     };
 
     const handleStatusSubmit = (e) => {
@@ -189,6 +232,36 @@ export default function Orders({ auth, orders, stats, filters }) {
             ...prev,
             [name]: value,
         }));
+    };
+
+    const handleLogisticChange = (e) => {
+        setSelectedLogisticId(e.target.value);
+    };
+
+    const handleAssignSubmit = (e) => {
+        e.preventDefault();
+        if (!selectedOrder || !selectedLogisticId) return;
+        setAssignLoading(true);
+
+        router.put(
+            route("orders.assignLogistic", selectedOrder.id),
+            {
+                logistic_id: selectedLogisticId,
+                _token: csrfToken,
+            },
+            {
+                onSuccess: () => {
+                    setAssignLoading(false);
+                    setAssignModalOpen(false);
+                    setSelectedOrder(null);
+                    setSelectedLogisticId("");
+                    router.reload({ only: ["orders"] });
+                },
+                onError: () => {
+                    setAssignLoading(false);
+                },
+            },
+        );
     };
 
     // Apply filters
@@ -350,6 +423,9 @@ export default function Orders({ auth, orders, stats, filters }) {
                                             Tracking #
                                         </th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Logistic
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Date
                                         </th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -414,6 +490,15 @@ export default function Orders({ auth, orders, stats, filters }) {
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span
+                                                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getLogisticBadgeClass(order.logistic)}`}
+                                                    >
+                                                        {formatLogistic(
+                                                            order.logistic,
+                                                        )}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
                                                     <div className="text-sm text-gray-500">
                                                         {formatDate(
                                                             order.created_at,
@@ -462,6 +547,23 @@ export default function Orders({ auth, orders, stats, filters }) {
                                                                 Cancel
                                                             </button>
                                                         )}
+                                                        {(order.order_status ===
+                                                            "confirmed" ||
+                                                            order.order_status ===
+                                                                "preparing") &&
+                                                            !order.logistic_id && (
+                                                                <button
+                                                                    onClick={() =>
+                                                                        handleAssignLogistic(
+                                                                            order,
+                                                                        )
+                                                                    }
+                                                                    className="text-indigo-600 hover:text-indigo-900"
+                                                                >
+                                                                    Assign
+                                                                    Logistic
+                                                                </button>
+                                                            )}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -469,7 +571,7 @@ export default function Orders({ auth, orders, stats, filters }) {
                                     ) : (
                                         <tr>
                                             <td
-                                                colSpan="8"
+                                                colSpan="9"
                                                 className="px-6 py-12 text-center text-gray-500"
                                             >
                                                 {searchTerm ||
@@ -696,6 +798,9 @@ export default function Orders({ auth, orders, stats, filters }) {
                                                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                                     Subtotal
                                                 </th>
+                                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                                    Logistic
+                                                </th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-200">
@@ -729,6 +834,54 @@ export default function Orders({ auth, orders, stats, filters }) {
                                                                 )}
                                                             </div>
                                                         </td>
+                                                        <td className="px-3 py-2">
+                                                            <select
+                                                                value={
+                                                                    itemLogistics[
+                                                                        item.id
+                                                                    ] || ""
+                                                                }
+                                                                onChange={(e) =>
+                                                                    handleItemLogisticChange(
+                                                                        item.id,
+                                                                        e.target
+                                                                            .value,
+                                                                    )
+                                                                }
+                                                                className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500"
+                                                            >
+                                                                <option value="">
+                                                                    Unassigned
+                                                                </option>
+                                                                {logistics.map(
+                                                                    (
+                                                                        logistic,
+                                                                    ) => (
+                                                                        <option
+                                                                            key={
+                                                                                logistic.id
+                                                                            }
+                                                                            value={
+                                                                                logistic.id
+                                                                            }
+                                                                        >
+                                                                            {
+                                                                                logistic.name
+                                                                            }
+                                                                        </option>
+                                                                    ),
+                                                                )}
+                                                            </select>
+                                                            {item.logistic && (
+                                                                <span
+                                                                    className={`inline-flex px-1 text-xs rounded-full mt-1 block ${getLogisticBadgeClass(item.logistic)}`}
+                                                                >
+                                                                    {formatLogistic(
+                                                                        item.logistic,
+                                                                    )}
+                                                                </span>
+                                                            )}
+                                                        </td>
                                                     </tr>
                                                 ),
                                             )}
@@ -738,6 +891,15 @@ export default function Orders({ auth, orders, stats, filters }) {
                             </div>
 
                             <div className="flex justify-end gap-2 mt-6 pt-4 border-t">
+                                <button
+                                    onClick={handleAssignItemLogistics}
+                                    disabled={loading}
+                                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                                >
+                                    {loading
+                                        ? "Assigning..."
+                                        : "Assign Item Logistics"}
+                                </button>
                                 <button
                                     onClick={() => setViewModalOpen(false)}
                                     className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
@@ -882,6 +1044,101 @@ export default function Orders({ auth, orders, stats, filters }) {
                             {loading ? "Cancelling..." : "Yes, Cancel Order"}
                         </button>
                     </div>
+                </div>
+            </Modal>
+
+            {/* Assign Logistic Modal */}
+            <Modal
+                show={assignModalOpen}
+                onClose={() => setAssignModalOpen(false)}
+                maxWidth="md"
+            >
+                <div className="p-6">
+                    <div className="flex justify-between items-start mb-4">
+                        <h2 className="text-xl font-semibold text-gray-900">
+                            Assign Logistic Rider - #{selectedOrder?.id}
+                        </h2>
+                        <button
+                            onClick={() => setAssignModalOpen(false)}
+                            className="text-gray-400 hover:text-gray-500"
+                        >
+                            <svg
+                                className="h-6 w-6"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M6 18L18 6M6 6l12 12"
+                                />
+                            </svg>
+                        </button>
+                    </div>
+                    {selectedOrder && (
+                        <form
+                            onSubmit={handleAssignSubmit}
+                            className="space-y-4"
+                        >
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Logistic Rider
+                                </label>
+                                <select
+                                    value={selectedLogisticId}
+                                    onChange={handleLogisticChange}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                    required
+                                >
+                                    <option value="">
+                                        Select Logistic Rider
+                                    </option>
+                                    {logistics.map((logistic) => (
+                                        <option
+                                            key={logistic.id}
+                                            value={logistic.id}
+                                        >
+                                            {logistic.name} -{" "}
+                                            {logistic.phone || logistic.email} (
+                                            {logistic.riderProfile
+                                                ?.vehicle_type || "No vehicle"}
+                                            )
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            {selectedOrder.logistic && (
+                                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                    <p className="text-sm text-blue-800">
+                                        Currently assigned:{" "}
+                                        {formatLogistic(selectedOrder.logistic)}
+                                    </p>
+                                </div>
+                            )}
+                            <div className="flex justify-end gap-2 mt-6 pt-4 border-t">
+                                <button
+                                    type="button"
+                                    onClick={() => setAssignModalOpen(false)}
+                                    className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={
+                                        assignLoading || !selectedLogisticId
+                                    }
+                                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                                >
+                                    {assignLoading
+                                        ? "Assigning..."
+                                        : "Assign Rider"}
+                                </button>
+                            </div>
+                        </form>
+                    )}
                 </div>
             </Modal>
         </div>

@@ -33,14 +33,14 @@ export default function AdminDashboard({
 
     // Handle product approval
     const handleApprove = (productId) => {
-        approveForm.post(route("products.approve", productId), {
+        approveForm.put(route("products.approve", productId), {
             preserveScroll: true,
         });
     };
 
     // Handle product rejection
     const handleReject = (productId) => {
-        rejectForm.post(route("products.reject", productId), {
+        rejectForm.put(route("products.reject", productId), {
             preserveScroll: true,
         });
     };
@@ -109,7 +109,7 @@ export default function AdminDashboard({
     const formatCurrency = (amount) => {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
-            currency: "USD",
+            currency: "PHP",
         }).format(amount || 0);
     };
 

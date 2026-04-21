@@ -42,9 +42,39 @@ class ProductController extends Controller
         
         $products = $query->latest()->paginate(12);
         
-        return Inertia::render('Products/Index', [
+        $categories = [
+            'vegetables' => 'Vegetables',
+            'fruits' => 'Fruits',
+            'grains' => 'Grains',
+            'herbs' => 'Herbs',
+            'dairy' => 'Dairy',
+            'meat' => 'Meat',
+            'fish' => 'Fish',
+            'eggs' => 'Eggs',
+            'organic' => 'Organic Produce',
+            'other' => 'Other',
+        ];
+
+        $units = [
+            'kg' => 'Kilogram (kg)',
+            'g' => 'Gram (g)',
+            'lb' => 'Pound (lb)',
+            'oz' => 'Ounce (oz)',
+            'ton' => 'Ton',
+            'piece' => 'Piece',
+            'bunch' => 'Bunch',
+            'dozen' => 'Dozen',
+            'liter' => 'Liter (L)',
+            'ml' => 'Milliliter (ml)',
+            'pack' => 'Pack',
+            'box' => 'Box',
+        ];
+
+        return Inertia::render('farmer/Products', [
             'products' => $products,
             'filters' => $request->only(['search', 'category']),
+            'categories' => $categories,
+            'units' => $units,
         ]);
     }
 
@@ -101,8 +131,76 @@ class ProductController extends Controller
             abort(403, 'Unauthorized');
         }
 
-        return Inertia::render('Products/Edit', [
+        return Inertia::render('farmer.ProductEdit', [
+            'auth' => ['user' => Auth::user()],
             'product' => $product,
+            'categories' => [
+                'vegetables' => 'Vegetables',
+                'fruits' => 'Fruits',
+                'grains' => 'Grains',
+                'herbs' => 'Herbs',
+                'dairy' => 'Dairy',
+                'meat' => 'Meat',
+                'fish' => 'Fish',
+                'eggs' => 'Eggs',
+                'organic' => 'Organic Produce',
+                'other' => 'Other',
+            ],
+            'units' => [
+                'kg' => 'Kilogram (kg)',
+                'g' => 'Gram (g)',
+                'lb' => 'Pound (lb)',
+                'oz' => 'Ounce (oz)',
+                'ton' => 'Ton',
+                'piece' => 'Piece',
+                'bunch' => 'Bunch',
+                'dozen' => 'Dozen',
+                'liter' => 'Liter (L)',
+                'ml' => 'Milliliter (ml)',
+                'pack' => 'Pack',
+                'box' => 'Box',
+            ],
+        ]);
+    }
+
+    /**
+     * Display product details (view).
+     */
+    public function show(Product $product)
+    {
+        if ($product->seller_id !== Auth::id() && Auth::user()->role !== 'admin') {
+            abort(403, 'Unauthorized');
+        }
+
+        return Inertia::render('farmer.ProductView', [
+            'auth' => ['user' => Auth::user()],
+            'product' => $product,
+            'categories' => [
+                'vegetables' => 'Vegetables',
+                'fruits' => 'Fruits',
+                'grains' => 'Grains',
+                'herbs' => 'Herbs',
+                'dairy' => 'Dairy',
+                'meat' => 'Meat',
+                'fish' => 'Fish',
+                'eggs' => 'Eggs',
+                'organic' => 'Organic Produce',
+                'other' => 'Other',
+            ],
+            'units' => [
+                'kg' => 'Kilogram (kg)',
+                'g' => 'Gram (g)',
+                'lb' => 'Pound (lb)',
+                'oz' => 'Ounce (oz)',
+                'ton' => 'Ton',
+                'piece' => 'Piece',
+                'bunch' => 'Bunch',
+                'dozen' => 'Dozen',
+                'liter' => 'Liter (L)',
+                'ml' => 'Milliliter (ml)',
+                'pack' => 'Pack',
+                'box' => 'Box',
+            ],
         ]);
     }
 
@@ -126,6 +224,7 @@ class ProductController extends Controller
             'harvest_date' => 'nullable|date',
             'farm_location' => 'nullable|string|max:255',
             'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+            'remove_image' => 'boolean',
             'is_organic' => 'boolean',
         ]);
 
@@ -144,10 +243,8 @@ class ProductController extends Controller
             $image->storeAs('public/products', $imageName);
             $validated['image_url'] = 'products/' . $imageName;
         } else {
-            // Preserve existing image_url if no new image is uploaded
-            // Check if user explicitly wants to remove the image
-            if ($request->has('remove_image') && $request->remove_image) {
-                // User wants to remove the image
+            // Preserve or remove existing image
+            if ($request->boolean('remove_image')) {
                 if ($product->image_url) {
                     $oldImagePath = storage_path('app/public/' . $product->image_url);
                     if (file_exists($oldImagePath)) {
@@ -156,14 +253,13 @@ class ProductController extends Controller
                 }
                 $validated['image_url'] = null;
             } else {
-                // Preserve the existing image_url
                 $validated['image_url'] = $product->image_url;
             }
         }
 
         $product->update($validated);
 
-        return redirect()->route('products.index')
+        return redirect()->route('farmer.products')
             ->with('success', 'Product updated successfully.');
     }
 
@@ -187,7 +283,7 @@ class ProductController extends Controller
 
         $product->delete();
 
-        return redirect()->route('products.index')
+return redirect()->route('farmer.products')
             ->with('success', 'Product deleted successfully.');
     }
 

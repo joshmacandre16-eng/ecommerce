@@ -1,11 +1,12 @@
 import { Head } from "@inertiajs/react";
-import { useState } from "react";
+import axios from "axios";
+import { useEffect, useState } from "react";
 import { router, usePage } from "@inertiajs/react";
 import AdminSidebar from "./sidebar";
 import AdminHeader from "./header";
 import Modal from "@/Components/Modal";
 
-export default function Products({ auth, products }) {
+export default function Products({ auth, products, logistics = [] }) {
     const user = auth?.user;
     const { props } = usePage();
     const csrfToken = props.csrf_token || props.csrfToken;
@@ -13,18 +14,24 @@ export default function Products({ auth, products }) {
     const [searchTerm, setSearchTerm] = useState("");
     const [categoryFilter, setCategoryFilter] = useState("");
     const [statusFilter, setStatusFilter] = useState("");
+    const [successMessage, setSuccessMessage] = useState("");
+    const [errorMessage, setErrorMessage] = useState("");
 
     // Modal states
     const [viewModalOpen, setViewModalOpen] = useState(false);
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
     const [createModalOpen, setCreateModalOpen] = useState(false);
+    const [assignModalOpen, setAssignModalOpen] = useState(false);
 
     // Selected product state
     const [selectedProduct, setSelectedProduct] = useState(null);
+    const [selectedLogisticId, setSelectedLogisticId] = useState(null);
 
     // Loading states
     const [loading, setLoading] = useState(false);
+    const [logisticsLoading, setLogisticsLoading] = useState(true);
+    const [logisticsList, setLogisticsList] = useState([]);
 
     // Form data for create/edit
     const [formData, setFormData] = useState({
@@ -37,10 +44,40 @@ export default function Products({ auth, products }) {
         farm_location: "",
         is_organic: false,
         image: null,
+        logistic_id: "",
     });
 
     // Image preview state
     const [imagePreview, setImagePreview] = useState(null);
+
+    // Handle success and error messages
+    const handleShowMessage = (message, type = "success") => {
+        if (type === "success") {
+            setSuccessMessage(message);
+            setTimeout(() => setSuccessMessage(""), 3000);
+        } else {
+            setErrorMessage(message);
+            setTimeout(() => setErrorMessage(""), 3000);
+        }
+    };
+
+    useEffect(() => {
+        const fetchLogistics = async () => {
+            try {
+                setLogisticsLoading(true);
+                const response = await axios.get(route("admin.logistics.list"));
+                setLogisticsList(
+                    response.data.props?.logistics || response.data || [],
+                );
+            } catch (error) {
+                console.error("Failed to fetch logistics:", error);
+                setLogisticsList(logistics); // fallback to prop
+            } finally {
+                setLogisticsLoading(false);
+            }
+        };
+        fetchLogistics();
+    }, []);
 
     // Filter products based on search, category, and status (client-side filtering for displayed products)
     const filteredProducts = products.data.filter((product) => {
@@ -107,7 +144,7 @@ export default function Products({ auth, products }) {
     const formatPrice = (price) => {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
-            currency: "USD",
+            currency: "PHP",
         }).format(price);
     };
 
@@ -129,6 +166,7 @@ export default function Products({ auth, products }) {
             farm_location: product.farm_location || "",
             is_organic: product.is_organic || false,
             image: null,
+            logistic_id: product.logistic_id || "",
         });
         // Set existing image as preview if available
         if (product.image) {
@@ -139,6 +177,53 @@ export default function Products({ auth, products }) {
         setEditModalOpen(true);
     };
 
+    const handleAssignOpen = (product) => {
+        setSelectedProduct(product);
+        setSelectedLogisticId(product.logistic_id || null);
+        setAssignModalOpen(true);
+    };
+
+    const handleAssignCancel = () => {
+        setAssignModalOpen(false);
+        setSelectedProduct(null);
+        setSelectedLogisticId(null);
+    };
+
+    const handleAssignSubmit = (e) => {
+        e.preventDefault();
+        if (!selectedProduct || !selectedLogisticId) {
+            handleShowMessage("Please select a logistic provider", "error");
+            return;
+        }
+        setLoading(true);
+        router.put(
+            route("admin.products.assignLogistic", selectedProduct.id),
+            {
+                logistic_id: selectedLogisticId,
+            },
+            {
+                preserveState: false,
+                preserveScroll: true,
+                onSuccess: () => {
+                    setLoading(false);
+                    setAssignModalOpen(false);
+                    setSelectedProduct(null);
+                    setSelectedLogisticId(null);
+                    handleShowMessage("Logistic assigned successfully!");
+                    router.reload(); // Reload to update the product list
+                },
+                onError: (error) => {
+                    setLoading(false);
+                    const errorMsg =
+                        error.errors?.logistic_id?.[0] ||
+                        error.message ||
+                        "Failed to assign logistic. Please try again.";
+                    handleShowMessage(errorMsg, "error");
+                },
+            },
+        );
+    };
+
     const handleDelete = (product) => {
         setSelectedProduct(product);
         setDeleteModalOpen(true);
@@ -146,10 +231,12 @@ export default function Products({ auth, products }) {
 
     const handleApprove = (product) => {
         setLoading(true);
-        router.post(
+        router.put(
             route("products.approve", product.id),
             {},
             {
+                preserveState: true,
+                preserveScroll: true,
                 onSuccess: () => {
                     setLoading(false);
                 },
@@ -162,10 +249,12 @@ export default function Products({ auth, products }) {
 
     const handleReject = (product) => {
         setLoading(true);
-        router.post(
+        router.put(
             route("products.reject", product.id),
             {},
             {
+                preserveState: true,
+                preserveScroll: true,
                 onSuccess: () => {
                     setLoading(false);
                 },
@@ -202,6 +291,7 @@ export default function Products({ auth, products }) {
             farm_location: "",
             is_organic: false,
             image: null,
+            logistic_id: "",
         });
         setImagePreview(null);
         setCreateModalOpen(true);
@@ -294,6 +384,81 @@ export default function Products({ auth, products }) {
                 <AdminHeader user={user} />
                 <main className="flex-1 p-8 overflow-y-auto">
                     <Head title="Products - Admin" />
+
+                    {/* Success Message */}
+                    {successMessage && (
+                        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start justify-between">
+                            <div className="flex items-start gap-3">
+                                <svg
+                                    className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5"
+                                    fill="currentColor"
+                                    viewBox="0 0 20 20"
+                                >
+                                    <path
+                                        fillRule="evenodd"
+                                        d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                                        clipRule="evenodd"
+                                    />
+                                </svg>
+                                <p className="text-green-800">
+                                    {successMessage}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setSuccessMessage("")}
+                                className="text-green-600 hover:text-green-700"
+                            >
+                                <svg
+                                    className="w-5 h-5"
+                                    fill="currentColor"
+                                    viewBox="0 0 20 20"
+                                >
+                                    <path
+                                        fillRule="evenodd"
+                                        d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                                        clipRule="evenodd"
+                                    />
+                                </svg>
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Error Message */}
+                    {errorMessage && (
+                        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start justify-between">
+                            <div className="flex items-start gap-3">
+                                <svg
+                                    className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5"
+                                    fill="currentColor"
+                                    viewBox="0 0 20 20"
+                                >
+                                    <path
+                                        fillRule="evenodd"
+                                        d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                                        clipRule="evenodd"
+                                    />
+                                </svg>
+                                <p className="text-red-800">{errorMessage}</p>
+                            </div>
+                            <button
+                                onClick={() => setErrorMessage("")}
+                                className="text-red-600 hover:text-red-700"
+                            >
+                                <svg
+                                    className="w-5 h-5"
+                                    fill="currentColor"
+                                    viewBox="0 0 20 20"
+                                >
+                                    <path
+                                        fillRule="evenodd"
+                                        d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                                        clipRule="evenodd"
+                                    />
+                                </svg>
+                            </button>
+                        </div>
+                    )}
+
                     <div className="mb-8 flex justify-between items-center">
                         <div>
                             <h1 className="text-2xl font-semibold text-gray-900">
@@ -400,6 +565,9 @@ export default function Products({ auth, products }) {
                                             Seller
                                         </th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Logistic
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Status
                                         </th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -445,12 +613,12 @@ export default function Products({ auth, products }) {
                                                         <img
                                                             src={product.image}
                                                             alt={product.name}
-                                                            className="w-12 h-12 object-cover rounded-lg"
+                                                            className="w-16 h-16 object-cover rounded-lg"
                                                         />
                                                     ) : (
-                                                        <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center">
+                                                        <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center">
                                                             <svg
-                                                                className="w-6 h-6 text-gray-400"
+                                                                className="w-8 h-8 text-gray-400"
                                                                 fill="none"
                                                                 stroke="currentColor"
                                                                 viewBox="0 0 24 24"
@@ -507,6 +675,20 @@ export default function Products({ auth, products }) {
                                                             "-"}
                                                     </div>
                                                 </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    {product.logistic ? (
+                                                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                                                            {
+                                                                product.logistic
+                                                                    .name
+                                                            }
+                                                        </span>
+                                                    ) : (
+                                                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                                                            -
+                                                        </span>
+                                                    )}
+                                                </td>
                                                 <td className="px-6 py-4 whitespace-normal break-words">
                                                     {product.is_approved ? (
                                                         <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
@@ -526,7 +708,7 @@ export default function Products({ auth, products }) {
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                                    <div className="flex gap-2">
+                                                    <div className="flex gap-2 flex-wrap">
                                                         <button
                                                             onClick={() =>
                                                                 handleView(
@@ -534,6 +716,7 @@ export default function Products({ auth, products }) {
                                                                 )
                                                             }
                                                             className="text-blue-600 hover:text-blue-900"
+                                                            title="View"
                                                         >
                                                             View
                                                         </button>
@@ -544,9 +727,31 @@ export default function Products({ auth, products }) {
                                                                 )
                                                             }
                                                             className="text-indigo-600 hover:text-indigo-900"
+                                                            title="Edit"
                                                         >
                                                             Edit
                                                         </button>
+                                                        {product.logistic ? (
+                                                            <span className="text-xs text-blue-600 px-2 py-1 bg-blue-50 rounded">
+                                                                {
+                                                                    product
+                                                                        .logistic
+                                                                        .name
+                                                                }
+                                                            </span>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() =>
+                                                                    handleAssignOpen(
+                                                                        product,
+                                                                    )
+                                                                }
+                                                                className="text-blue-600 hover:text-blue-900 text-xs px-2 py-1 bg-blue-50 rounded hover:bg-blue-100"
+                                                                title="Assign Logistic"
+                                                            >
+                                                                Assign Logistic
+                                                            </button>
+                                                        )}
                                                         {!product.is_approved ? (
                                                             <button
                                                                 onClick={() =>
@@ -583,6 +788,7 @@ export default function Products({ auth, products }) {
                                                                 )
                                                             }
                                                             className="text-red-600 hover:text-red-900"
+                                                            title="Delete"
                                                         >
                                                             Delete
                                                         </button>
@@ -593,7 +799,7 @@ export default function Products({ auth, products }) {
                                     ) : (
                                         <tr>
                                             <td
-                                                colSpan="9"
+                                                colSpan="10"
                                                 className="px-6 py-12 text-center text-gray-500"
                                             >
                                                 {searchTerm ||
@@ -1192,6 +1398,30 @@ export default function Products({ auth, products }) {
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Default Logistic
+                                </label>
+                                <select
+                                    name="logistic_id"
+                                    value={formData.logistic_id}
+                                    onChange={handleInputChange}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                                >
+                                    <option value="">No default</option>
+                                    {(logisticsList.length > 0
+                                        ? logisticsList
+                                        : logistics
+                                    ).map((logistic) => (
+                                        <option
+                                            key={logistic.id}
+                                            value={logistic.id}
+                                        >
+                                            {logistic.name} ({logistic.email})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
                                     Farm Location
                                 </label>
                                 <input
@@ -1264,6 +1494,145 @@ export default function Products({ auth, products }) {
                                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
                             >
                                 {loading ? "Saving..." : "Save Changes"}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </Modal>
+
+            {/* Assign Logistic Modal */}
+            <Modal
+                show={assignModalOpen}
+                onClose={handleAssignCancel}
+                maxWidth="2xl"
+            >
+                <div className="p-6">
+                    <div className="flex justify-between items-start mb-4">
+                        <h2 className="text-xl font-semibold text-gray-900">
+                            Assign Logistic to {selectedProduct?.name}
+                        </h2>
+                        <button
+                            onClick={handleAssignCancel}
+                            disabled={loading}
+                            className="text-gray-400 hover:text-gray-500 disabled:opacity-50"
+                        >
+                            <svg
+                                className="h-6 w-6"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M6 18L18 6M6 6l12 12"
+                                />
+                            </svg>
+                        </button>
+                    </div>
+                    <form onSubmit={handleAssignSubmit} className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Select Logistic Provider *
+                            </label>
+                            {logisticsLoading ? (
+                                <div className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 flex items-center gap-2">
+                                    <svg
+                                        className="animate-spin h-4 w-4"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        stroke="currentColor"
+                                    >
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                        />
+                                    </svg>
+                                    Loading logistics...
+                                </div>
+                            ) : (
+                                <select
+                                    value={selectedLogisticId || ""}
+                                    onChange={(e) =>
+                                        setSelectedLogisticId(
+                                            e.target.value
+                                                ? parseInt(e.target.value)
+                                                : null,
+                                        )
+                                    }
+                                    disabled={loading}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    required
+                                >
+                                    <option value="">
+                                        Select a logistic provider...
+                                    </option>
+                                    {(logisticsList.length > 0
+                                        ? logisticsList
+                                        : logistics
+                                    ).map((logistic) => (
+                                        <option
+                                            key={logistic.id}
+                                            value={logistic.id}
+                                        >
+                                            {logistic.name} ({logistic.email})
+                                            {logistic.riderProfile?.vehicle_type
+                                                ? ` | ${logistic.riderProfile.vehicle_type}`
+                                                : ""}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
+                            {logisticsList.length === 0 &&
+                                !logisticsLoading &&
+                                logistics.length === 0 && (
+                                    <p className="mt-2 text-sm text-yellow-600">
+                                        No logistics available. Please add
+                                        logistics providers first.
+                                    </p>
+                                )}
+                        </div>
+                        <div className="flex justify-end gap-2 pt-4 border-t">
+                            <button
+                                type="button"
+                                onClick={handleAssignCancel}
+                                disabled={loading}
+                                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={
+                                    !selectedLogisticId ||
+                                    loading ||
+                                    logisticsLoading
+                                }
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                            >
+                                {loading ? (
+                                    <>
+                                        <svg
+                                            className="animate-spin h-4 w-4"
+                                            fill="none"
+                                            viewBox="0 0 24 24"
+                                            stroke="currentColor"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth={2}
+                                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                            />
+                                        </svg>
+                                        Assigning...
+                                    </>
+                                ) : (
+                                    "Assign Logistic"
+                                )}
                             </button>
                         </div>
                     </form>

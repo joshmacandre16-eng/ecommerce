@@ -23,11 +23,10 @@ export default function ProductsCreate({ auth, categories = {}, units = {} }) {
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        post("/products", {
+        post("/farmer/products", {
             forceFormData: true,
             onSuccess: () => {
-                reset();
-                setImagePreview(null);
+                // Form reset handled by redirect and flash message
             },
         });
     };
@@ -185,7 +184,7 @@ export default function ProductsCreate({ auth, categories = {}, units = {} }) {
                                             </label>
                                             <div className="relative">
                                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
-                                                    $
+                                                    ₱
                                                 </span>
                                                 <input
                                                     type="number"
